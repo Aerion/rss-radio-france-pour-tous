@@ -69,7 +69,7 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
           ).toUTCString()}</pubDate>
           <itunes:duration>${new Date(manifestation.duration * 1000)
             .toISOString()
-            .substring(11, 16)}</itunes:duration>
+            .substring(11, 19)}</itunes:duration>
           ${imgUrl && '<itunes:image href="' + imgUrl + '"/>'}
         </item>`;
   };
