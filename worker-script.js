@@ -53,6 +53,13 @@ const getImgUrl = (visuals, fallbackImgId) => {
 };
 
 const buildFeed = ({ diffusions, showDetails, manifestations }) => {
+  const buildElement = (name, innerText) => {
+    return !!innerText ? `<${name}>${innerText}</${name}>` : "";
+  };
+  const buildImgElement = (url) => {
+    return !!url ? `<itunes:image href="${imgUrl}"/>` : "";
+  };
+
   const buildItem = (diffusion) => {
     const manifestation =
       manifestations[
@@ -63,7 +70,7 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
     const imgUrl = getImgUrl(diffusion.visuals, diffusion.mainImage);
     return `    <item>
           <title>${diffusion.title}</title>
-          ${diffusion.path && "<link>" + diffusion.path + "</link>"}
+          ${buildElement("link", diffusion.path)}
           <description>${diffusion.standfirst}</description>
           <enclosure url="${manifestation.url}" type="audio/mpeg" />
           <pubDate>${new Date(
@@ -72,7 +79,8 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
           <itunes:duration>${new Date(manifestation.duration * 1000)
             .toISOString()
             .substring(11, 19)}</itunes:duration>
-          ${imgUrl && '<itunes:image href="' + imgUrl + '"/>'}
+          ${buildElement("itunes:image", diffusion.path)}
+          ${buildImgElement(imgUrl)}
         </item>`;
   };
 
@@ -83,7 +91,7 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
         <title>${showDetails.title}</title>
         <link>${showDetails.path}</link>
         <description>${showDetails.standfirst}</description>
-        ${imgUrl && '<itunes:image href="' + imgUrl + '"/>'}
+        ${buildImgElement(imgUrl)}
     ${diffusions.map(buildItem).join("\n")}
       </channel>
     </rss>`;
