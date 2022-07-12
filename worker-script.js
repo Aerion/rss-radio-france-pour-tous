@@ -40,7 +40,9 @@ const getImgUrl = (visuals, fallbackImgId) => {
       return res;
     }, {});
     chosenId =
-      visualsMap["square_banner"] ?? visualsMap["square_visual"] ?? visuals[0];
+      visualsMap["square_banner"] ??
+      visualsMap["square_visual"] ??
+      visuals[0].visual_uuid;
   }
 
   if (!chosenId) {
