@@ -63,7 +63,7 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
     const imgUrl = getImgUrl(diffusion.visuals, diffusion.mainImage);
     return `    <item>
           <title>${diffusion.title}</title>
-          <link>${diffusion.path}</link>
+          ${diffusion.path && "<link>" + diffusion.path + "</link>"}
           <description>${diffusion.standfirst}</description>
           <enclosure url="${manifestation.url}" type="audio/mpeg" />
           <pubDate>${new Date(
