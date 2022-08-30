@@ -61,6 +61,7 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
   };
 
   const escapeXml = (unsafe) => {
+    if (typeof unsafe === 'undefined') return unsafe;
     // From https://stackoverflow.com/a/27979933
     return unsafe.replace(/[<>&'"]/g, function (c) {
       switch (c) {
