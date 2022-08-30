@@ -201,7 +201,7 @@ const getHomePageContents = () => {
       }
 
       const response = await fetch(
-        "https://radio-france-rss.aerion.workers.dev/search/?query=" +
+        "${baseUrl}/search/?query=" +
           encodeURIComponent(query)
       );
       const searchResults = await response.json();
