@@ -60,6 +60,24 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
     return !!url ? `<itunes:image href="${imgUrl}"/>` : "";
   };
 
+  const escapeXml = (unsafe) => {
+    // From https://stackoverflow.com/a/27979933
+    return unsafe.replace(/[<>&'"]/g, function (c) {
+      switch (c) {
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case "&":
+          return "&amp;";
+        case "'":
+          return "&apos;";
+        case '"':
+          return "&quot;";
+      }
+    });
+  };
+
   const buildItem = (diffusion) => {
     const manifestation =
       manifestations[
@@ -69,10 +87,10 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
       ];
     const imgUrl = getImgUrl(diffusion.visuals, diffusion.mainImage);
     return `    <item>
-          <title>${diffusion.title}</title>
+          <title>${escapeXml(diffusion.title)}</title>
           <guid>${manifestation.id}</guid>
           ${buildElement("link", diffusion.path)}
-          <description>${diffusion.standfirst}</description>
+          <description>${escapeXml(diffusion.standfirst)}</description>
           <enclosure url="${manifestation.url}" type="audio/mpeg" />
           <pubDate>${new Date(
             diffusion.createdTime * 1000
@@ -89,9 +107,9 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
   return `<?xml version="1.0" encoding="UTF-8"?>
     <rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:pa="http://podcastaddict.com" xmlns:podcastRF="http://radiofrance.fr/Lancelot/Podcast#" xmlns:googleplay="http://www.google.com/schemas/play-podcasts/1.0" version="2.0">
       <channel>
-        <title>${showDetails.title}</title>
+        <title>${escapeXml(showDetails.title)}</title>
         <link>${showDetails.path}</link>
-        <description>${showDetails.standfirst}</description>
+        <description>${escapeXml(showDetails.standfirst)}</description>
         ${buildImgElement(imgUrl)}
     ${diffusions.map(buildItem).join("\n")}
       </channel>
