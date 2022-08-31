@@ -83,9 +83,10 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
     const manifestation =
       manifestations[
         diffusion.relationships.manifestations.find(
-          (manifId) => manifestations[manifId]?.principal
+          (manifId) => manifestations[manifId]?.principal && !['youtube', 'dailymotion'].includes(manifestations[manifId]?.mediaType)
         )
       ];
+
     const imgUrl = getImgUrl(diffusion.visuals, diffusion.mainImage);
     return `    <item>
           <title>${escapeXml(diffusion.title)}</title>
