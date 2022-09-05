@@ -86,6 +86,10 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
           (manifId) => manifestations[manifId]?.principal && !['youtube', 'dailymotion'].includes(manifestations[manifId]?.mediaType)
         )
       ];
+    if (typeof manifestation === 'undefined') {
+      console.log(`Item ${diffusion.id} visible at ${diffusion.path} has no mp3 version, skipping`);
+      return '';
+    }
 
     const imgUrl = getImgUrl(diffusion.visuals, diffusion.mainImage);
     return `    <item>
