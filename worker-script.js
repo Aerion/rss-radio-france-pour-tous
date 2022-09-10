@@ -91,10 +91,16 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
       return '';
     }
 
+    let guid = diffusion.id;
+    if (new Date(diffusion.createdTime * 1000) <= new Date('Sep 12 2022')) {
+      // backward compatibility: keep old id generation.
+      guid = manifestation.id;
+    }
+
     const imgUrl = getImgUrl(diffusion.visuals, diffusion.mainImage);
     return `    <item>
           <title>${escapeXml(diffusion.title)}</title>
-          <guid>${manifestation.id}</guid>
+          <guid>${guid}</guid>
           ${buildElement("link", diffusion.path)}
           <description>${escapeXml(diffusion.standfirst)}</description>
           <enclosure url="${manifestation.url}" type="audio/mpeg" />
