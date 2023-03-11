@@ -61,7 +61,7 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
   };
 
   const escapeXml = (unsafe) => {
-    if (typeof unsafe === 'undefined') return unsafe;
+    if (typeof unsafe === "undefined") return unsafe;
     // From https://stackoverflow.com/a/27979933
     return unsafe.replace(/[<>&'"]/g, function (c) {
       switch (c) {
@@ -83,16 +83,22 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
     const manifestation =
       manifestations[
         diffusion.relationships.manifestations.find(
-          (manifId) => manifestations[manifId]?.principal && !['youtube', 'dailymotion'].includes(manifestations[manifId]?.mediaType)
+          (manifId) =>
+            manifestations[manifId]?.principal &&
+            !["youtube", "dailymotion"].includes(
+              manifestations[manifId]?.mediaType
+            )
         )
       ];
-    if (typeof manifestation === 'undefined') {
-      console.log(`Item ${diffusion.id} visible at ${diffusion.path} has no mp3 version, skipping`);
-      return '';
+    if (typeof manifestation === "undefined") {
+      console.log(
+        `Item ${diffusion.id} visible at ${diffusion.path} has no mp3 version, skipping`
+      );
+      return "";
     }
 
     let guid = diffusion.id;
-    if (new Date(diffusion.createdTime * 1000) <= new Date('Sep 12 2022')) {
+    if (new Date(diffusion.createdTime * 1000) <= new Date("Sep 12 2022")) {
       // backward compatibility: keep old id generation.
       guid = manifestation.id;
     }
