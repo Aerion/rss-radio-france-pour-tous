@@ -21,7 +21,7 @@ const getRadioFranceUrl = async (path) => {
 
 const getShowDiffusions = async (showId) => {
   const json = await getRadioFranceUrl(
-    `shows/${showId}/diffusions?filter[manifestations][exists]=true&include=show&include=manifestations`
+    `shows/${showId}/diffusions?filter[manifestations][exists]=true&include=show&include=manifestations&include=series`
   );
   return {
     diffusions: json.data.map((item) => item.diffusions),
