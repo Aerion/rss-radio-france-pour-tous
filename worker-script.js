@@ -253,7 +253,7 @@ const handleRequest = async (request) => {
   const url = new URL(request.url);
 
   if (url.pathname.startsWith(routePrefixRss)) {
-    const showId = url.pathname.substr(routePrefixRss.length);
+    const showId = url.pathname.substring(routePrefixRss.length);
     const showDiffusions = await getShowDiffusions(showId);
     const feed = buildFeed(showDiffusions);
     return new Response(feed, {
