@@ -32,7 +32,3 @@ Pour un podcast sélectionné (_Espions, une histoire vraie_), on peut voir :
 ![Contenu du flux RSS](assets/demo-flux-rss.png)
 
 ![Épisodes sur Apple Podcasts](assets/demo-apple-podcasts.png)
-
-## Limitations
-
-Actuellement, uniquement les 100 derniers podcasts sont renvoyés pour chaque émission. Ceci devrait être amplement suffisant, mais il serait très facile de renvoyer les pages suivantes.

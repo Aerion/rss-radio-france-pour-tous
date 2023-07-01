@@ -19,9 +19,9 @@ const getRadioFranceUrl = async (path) => {
   return await response.json();
 };
 
-const getShowDiffusions = async (showId) => {
+const getShowDiffusions = async (showId, page) => {
   const json = await getRadioFranceUrl(
-    `shows/${showId}/diffusions?filter[manifestations][exists]=true&include=show&include=manifestations&include=series`
+    `shows/${showId}/diffusions?filter[manifestations][exists]=true&include=show&include=manifestations&include=series&page[offset]=${page}`
   );
 
   let showDetails = json.included.shows[showId];
@@ -37,6 +37,7 @@ const getShowDiffusions = async (showId) => {
     diffusions: json.data.map((item) => item.diffusions),
     showDetails,
     manifestations: json.included.manifestations,
+    nextPageIdx: json.links.next !== undefined ? page + 1 : undefined,
   };
 };
 
@@ -62,7 +63,10 @@ const getImgUrl = (visuals, fallbackImgId) => {
   return `https://api.radiofrance.fr/v1/services/embed/image/${chosenId}?preset=568x568`;
 };
 
-const buildFeed = ({ diffusions, showDetails, manifestations }) => {
+const buildFeed = (
+  { diffusions, showDetails, manifestations },
+  nextPageUrl
+) => {
   const buildElement = (name, innerText) => {
     return !!innerText ? `<${name}>${innerText}</${name}>` : "";
   };
@@ -131,12 +135,18 @@ const buildFeed = ({ diffusions, showDetails, manifestations }) => {
         </item>`;
   };
 
+  const nextPageXmlTag = nextPageUrl
+    ? `
+  <atom:link href="${nextPageUrl}" rel="next" />`
+    : "";
+
   const imgUrl = getImgUrl(showDetails.visuals, showDetails.mainImage);
   return `<?xml version="1.0" encoding="UTF-8"?>
-    <rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:pa="http://podcastaddict.com" xmlns:podcastRF="http://radiofrance.fr/Lancelot/Podcast#" xmlns:googleplay="http://www.google.com/schemas/play-podcasts/1.0" version="2.0">
+    <rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:pa="http://podcastaddict.com" xmlns:podcastRF="http://radiofrance.fr/Lancelot/Podcast#" xmlns:googleplay="http://www.google.com/schemas/play-podcasts/1.0" version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
       <channel>
         <title>${escapeXml(showDetails.title)}</title>
         <link>${showDetails.path}</link>
+        ${nextPageXmlTag}
         <description>${escapeXml(showDetails.standfirst)}</description>
         ${buildImgElement(imgUrl)}
     ${diffusions.map(buildItem).join("\n")}
@@ -264,8 +274,18 @@ const handleRequest = async (request) => {
 
   if (url.pathname.startsWith(routePrefixRss)) {
     const showId = url.pathname.substring(routePrefixRss.length);
-    const showDiffusions = await getShowDiffusions(showId);
-    const feed = buildFeed(showDiffusions);
+    const page = parseInt(url.searchParams.get("page") || "0", 10);
+    const showDiffusions = await getShowDiffusions(showId, page);
+
+    let nextPageUrl;
+    if (showDiffusions.nextPageIdx !== undefined) {
+      nextPageUrl = new URL(url);
+      nextPageUrl.searchParams.delete("page");
+      nextPageUrl.searchParams.append("page", showDiffusions.nextPageIdx);
+    } else {
+      nextPageUrl = undefined;
+    }
+    const feed = buildFeed(showDiffusions, nextPageUrl);
     return new Response(feed, {
       headers: {
         "Content-Type": "application/xml; charset=utf-8",
