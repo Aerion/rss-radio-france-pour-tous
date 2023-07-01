@@ -23,9 +23,19 @@ const getShowDiffusions = async (showId) => {
   const json = await getRadioFranceUrl(
     `shows/${showId}/diffusions?filter[manifestations][exists]=true&include=show&include=manifestations&include=series`
   );
+
+  let showDetails = json.included.shows[showId];
+  if (showDetails === undefined) {
+    // For some reason, for some podcasts, the show is not included in the manifestations
+    // It's very rare, but it's the case for the show 1aaba3dd-be85-4bbd-b046-c1343affc505
+    // Mitigate it by calling the show details endpoint directly
+    const showDetailsJson = await getRadioFranceUrl(`shows/${showId}`);
+    showDetails = showDetailsJson.data.shows;
+  }
+
   return {
     diffusions: json.data.map((item) => item.diffusions),
-    showDetails: json.included.shows[showId],
+    showDetails,
     manifestations: json.included.manifestations,
   };
 };
