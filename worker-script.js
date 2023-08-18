@@ -48,7 +48,9 @@ const getShowDiffusions = async (showId, page) => {
     }
 
     diffusions.push(...json.data.map((item) => item.diffusions));
-    manifestations.push(...json.included.manifestations);
+    for (const k in json.included.manifestations) {
+      manifestations[k] = json.included.manifestations[k];
+    }
 
     page += 1;
   } while (shouldFetchAllDiffusions && json.links.next !== undefined);
@@ -137,12 +139,14 @@ const buildFeed = (
       guid = manifestation.id;
     }
 
+    const description = diffusion.standfirst ?? diffusion.bodyMarkdown ?? "";
+
     const imgUrl = getImgUrl(diffusion.visuals, diffusion.mainImage);
     return `    <item>
           <title>${escapeXml(diffusion.title)}</title>
           <guid>${guid}</guid>
           ${buildElement("link", diffusion.path)}
-          <description>${escapeXml(diffusion.standfirst)}</description>
+          <description>${escapeXml(description)}</description>
           <enclosure url="${manifestation.url}" type="audio/mpeg" />
           <pubDate>${new Date(
             diffusion.createdTime * 1000
