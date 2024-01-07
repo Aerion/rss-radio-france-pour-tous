@@ -234,21 +234,29 @@ const getHomePageContents = () => {
       "#search-results-container"
     );
     const setSearchResults = (searchResults) => {
-      const nodes = searchResults.map((searchResult) => {
-        const node = document.createElement("aside");
-        const imgNodeHTML = searchResult['imgUrl'] ? \`<img src="\${searchResult['imgUrl']}" />\` : '';
-        node.innerHTML = \`
-          \${imgNodeHTML}
-          <h3>\${searchResult["title"]}</h3>
-          <small>\${searchResult["standfirst"]}</small>
-          <p>
-            <a href="\${searchResult['rssUrl']}" target="_blank">Flux RSS</a> - <a href="\${searchResult['path']}" target="_blank">Émission</a>
-          </p>
-        \`;
-        return node;
-      });
+      if (searchResults.length === 0) {
+        const noResultsNode = document.createElement("p");
+        noResultsNode.innerHTML = "Aucun résultat trouvé pour cette recherche.<br>Êtes-vous sûr que ce podcast existe sur le site de Radio France ?";
+        noResultsNode.style.textAlign = "center";
+        noResultsNode.style.fontWeight = "bold";
+        searchResultsContainer.replaceChildren(noResultsNode);
+      } else {
+        const nodes = searchResults.map((searchResult) => {
+          const node = document.createElement("aside");
+          const imgNodeHTML = searchResult['imgUrl'] ? \`<img src="\${searchResult['imgUrl']}" />\` : '';
+          node.innerHTML = \`
+            \${imgNodeHTML}
+            <h3>\${searchResult["title"]}</h3>
+            <small>\${searchResult["standfirst"]}</small>
+            <p>
+              <a href="\${searchResult['rssUrl']}" target="_blank">Flux RSS</a> - <a href="\${searchResult['path']}" target="_blank">Émission</a>
+            </p>
+          \`;
+          return node;
+        });
 
-      searchResultsContainer.replaceChildren(...nodes);
+        searchResultsContainer.replaceChildren(...nodes);
+      }
     };
 
     const form = document.querySelector("form");
