@@ -243,7 +243,7 @@ const getHomePageContents = () => {
       } else {
         const nodes = searchResults.map((searchResult) => {
           const node = document.createElement("aside");
-          const imgNodeHTML = searchResult['imgUrl'] ? \`<img src="\${searchResult['imgUrl']}" />\` : '';
+          const imgNodeHTML = searchResult['imgUrl'] ? \`<img src="\${searchResult['imgUrl']}" />\` : '<div style="width: 100%;background: lightgray;aspect-ratio: 1/1;"></div>';
           node.innerHTML = \`
             \${imgNodeHTML}
             <h3>\${searchResult["title"]}</h3>
