@@ -98,8 +98,10 @@ const buildFeed = (
 
   const escapeXml = (unsafe) => {
     if (typeof unsafe === "undefined") return unsafe;
+
+    let escaped;
     // From https://stackoverflow.com/a/27979933
-    return unsafe.replace(/[<>&'"]/g, function (c) {
+    escaped = unsafe.replace(/[<>&'"]/g, function (c) {
       switch (c) {
         case "<":
           return "&lt;";
@@ -113,7 +115,42 @@ const buildFeed = (
           return "&quot;";
       }
     });
+
+    return removeXMLInvalidChars(escaped, true);
   };
+
+  /**
+   * Removes invalid XML characters from a string
+   * @param {string} str - a string containing potentially invalid XML characters (non-UTF8 characters, STX, EOX etc)
+   * @param {boolean} removeDiscouragedChars - should it remove discouraged but valid XML characters
+   * @return {string} a sanitized string stripped of invalid XML characters
+  */
+  // https://gist.github.com/john-doherty/b9195065884cdbfd2017a4756e6409cc
+  function removeXMLInvalidChars(str, removeDiscouragedChars) {
+    // remove everything forbidden by XML 1.0 specifications, plus the unicode replacement character U+FFFD
+    var regex = /((?:[\0-\x08\x0B\f\x0E-\x1F\uFFFD\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]))/g;
+
+    // ensure we have a string
+    str = String(str || '').replace(regex, '');
+
+    if (removeDiscouragedChars) {
+
+        // remove everything discouraged by XML 1.0 specifications
+        regex = new RegExp(
+            '([\\x7F-\\x84]|[\\x86-\\x9F]|[\\uFDD0-\\uFDEF]|(?:\\uD83F[\\uDFFE\\uDFFF])|(?:\\uD87F[\\uDF' +
+            'FE\\uDFFF])|(?:\\uD8BF[\\uDFFE\\uDFFF])|(?:\\uD8FF[\\uDFFE\\uDFFF])|(?:\\uD93F[\\uDFFE\\uD' +
+            'FFF])|(?:\\uD97F[\\uDFFE\\uDFFF])|(?:\\uD9BF[\\uDFFE\\uDFFF])|(?:\\uD9FF[\\uDFFE\\uDFFF])' +
+            '|(?:\\uDA3F[\\uDFFE\\uDFFF])|(?:\\uDA7F[\\uDFFE\\uDFFF])|(?:\\uDABF[\\uDFFE\\uDFFF])|(?:\\' +
+            'uDAFF[\\uDFFE\\uDFFF])|(?:\\uDB3F[\\uDFFE\\uDFFF])|(?:\\uDB7F[\\uDFFE\\uDFFF])|(?:\\uDBBF' +
+            '[\\uDFFE\\uDFFF])|(?:\\uDBFF[\\uDFFE\\uDFFF])(?:[\\0-\\t\\x0B\\f\\x0E-\\u2027\\u202A-\\uD7FF\\' +
+            'uE000-\\uFFFF]|[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|' +
+            '(?:[^\\uD800-\\uDBFF]|^)[\\uDC00-\\uDFFF]))', 'g');
+
+        str = str.replace(regex, '');
+    }
+
+    return str;
+  }
 
   const buildItem = (diffusion) => {
     const manifestation =
