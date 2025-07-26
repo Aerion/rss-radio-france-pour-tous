@@ -184,7 +184,7 @@ const buildFeed = (
           <guid>${guid}</guid>
           ${buildElement("link", diffusion.path)}
           <description>${escapeXml(description)}</description>
-          <enclosure url="${manifestation.url}" type="audio/mpeg" />
+          <enclosure url="${escapeXml(manifestation.url)}" type="audio/mpeg" />
           <pubDate>${new Date(
             diffusion.createdTime * 1000
           ).toUTCString()}</pubDate>
