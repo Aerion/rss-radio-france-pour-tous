@@ -326,15 +326,26 @@ const getSearchResults = async (query) => {
   );
   return json.data
     .filter((item) => item.resultItems.model === "show")
-    .map((item) => {
-      const show = json.included.shows[item.resultItems.relationships.show[0]];
-      return {
-        title: show.title,
-        path: show.path,
-        standfirst: show.standfirst,
-        imgUrl: getImgUrl(show.visuals, show.mainImage),
-        rssUrl: `${baseUrl}${routePrefixRss}${show.id}`,
-      };
+    .flatMap((item) => {
+      try {
+        const show = json.included.shows[item.resultItems.relationships.show[0]];
+
+        if (!show) {
+          console.warn("Show not found in included data", item.resultItems.relationships.show[0]);
+          return [];
+        }
+
+        return [{
+          title: show.title,
+          path: show.path,
+          standfirst: show.standfirst,
+          imgUrl: getImgUrl(show.visuals, show.mainImage),
+          rssUrl: `${baseUrl}${routePrefixRss}${show.id}`,
+        }];
+      } catch (error) {
+        console.warn("Exception while parsing show", item, error);
+        return [];
+      }
     });
 };
 
