@@ -24,6 +24,11 @@ const getRadioFranceUrl = async (path) => {
   return await response.json();
 };
 
+/**
+ * @param {string} showId
+ * @param {number} page - 0-based page index, or -1 to fetch all pages
+ * @returns {Promise<{diffusions: object[], showDetails: object, manifestations: object, nextPageIdx: number|undefined}>}
+ */
 const getShowDiffusions = async (showId, page) => {
   const diffusions = [];
   const manifestations = [];
@@ -70,6 +75,11 @@ const getShowDiffusions = async (showId, page) => {
   };
 };
 
+/**
+ * @param {Array<{name: string, visual_uuid: string}>|null} visuals
+ * @param {string|null} fallbackImgId - visual_uuid used when visuals is empty
+ * @returns {string|null}
+ */
 const getImgUrl = (visuals, fallbackImgId) => {
   let chosenId;
   if (!visuals || visuals.length === 0) {
@@ -89,6 +99,11 @@ const getImgUrl = (visuals, fallbackImgId) => {
   return `https://api.radiofrance.fr/v1/services/embed/image/${chosenId}?preset=568x568`;
 };
 
+/**
+ * @param {{diffusions: object[], showDetails: object, manifestations: object}} showData
+ * @param {string|URL|null} nextPageUrl - URL for the atom:link next-page tag, or null
+ * @returns {string} RSS XML feed
+ */
 const buildFeed = ({ diffusions, showDetails, manifestations }, nextPageUrl) => {
   const buildElement = (name, innerText) => {
     return innerText ? `<${name}>${innerText}</${name}>` : "";
@@ -325,6 +340,10 @@ const getHomePageContents = () => {
 `;
 };
 
+/**
+ * @param {string} query
+ * @returns {Promise<Array<{title: string, path: string, standfirst: string, imgUrl: string|null, rssUrl: string}>>}
+ */
 const getSearchResults = async (query) => {
   const json = await getRadioFranceUrl(
     `/stations/search?value=${encodeURIComponent(query)}&include=show`
