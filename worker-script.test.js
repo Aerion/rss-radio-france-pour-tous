@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { getImgUrl, buildFeed } from "./src/feed.js";
-import { getSearchResults } from "./src/api.js";
+import { getSearchResults, getShowDiffusions } from "./src/api.js";
 import { handleRequest } from "./worker-script.js";
 import show0b91efaf from "./fixtures/api-show-0b91efaf.json" with { type: "json" };
 import show4a41823f from "./fixtures/api-show-4a41823f.json" with { type: "json" };
+import show70b2e0a9 from "./fixtures/api-show-70b2e0a9.json" with { type: "json" };
+import show70b2e0a9Details from "./fixtures/api-show-70b2e0a9-details.json" with { type: "json" };
 import searchFixture from "./fixtures/api-search-response.json" with { type: "json" };
 
 // ── getImgUrl ──────────────────────────────────────────────────────────────────
@@ -160,9 +162,72 @@ describe("buildFeed", () => {
   });
 });
 
+// ── getShowDiffusions ─────────────────────────────────────────────────────────
+
+describe("getShowDiffusions", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("returns showDetails from included.shows when present", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(show0b91efaf),
+      })
+    );
+    const result = await getShowDiffusions("0b91efaf-26e6-11e4-907f-782bcb6744eb", 0);
+    expect(result.showDetails.title).toBe("Affaires sensibles");
+    expect(result.diffusions).toHaveLength(show0b91efaf.data.length);
+    expect(result.nextPageIdx).toBe(1); // fixture has links.next
+  });
+
+  it("sets nextPageIdx to undefined when no next link", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(show4a41823f),
+      })
+    );
+    const result = await getShowDiffusions("4a41823f-f1f7-4725-8380-e428893eb93b", 0);
+    expect(result.nextPageIdx).toBeUndefined();
+  });
+
+  it("falls back to GET /shows/{id} when showId is absent from included.shows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve(show70b2e0a9),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve(show70b2e0a9Details),
+        })
+    );
+    const result = await getShowDiffusions("70b2e0a9-4722-4291-932e-555eff12239e", 0);
+    expect(result.showDetails).toBeDefined();
+    expect(result.showDetails.title).toContain("Amie prodigieuse");
+    expect(result.diffusions.length).toBeGreaterThan(0);
+  });
+
+  it("throws when the API returns an error status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 503, statusText: "Service Unavailable" })
+    );
+    await expect(getShowDiffusions("0b91efaf-26e6-11e4-907f-782bcb6744eb", 0)).rejects.toThrow(
+      "Radio France API error: 503"
+    );
+  });
+});
+
 // ── getSearchResults ──────────────────────────────────────────────────────────
 
 describe("getSearchResults", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
@@ -220,6 +285,8 @@ describe("getSearchResults", () => {
 // ── handleRequest router ──────────────────────────────────────────────────────
 
 describe("handleRequest", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("returns 404 for unknown routes", async () => {
     const response = await handleRequest(new Request("https://example.com/unknown"));
     expect(response.status).toBe(404);
@@ -233,6 +300,24 @@ describe("handleRequest", () => {
     expect(body).toContain("RSS Radio France pour tous");
   });
 
+  it("returns XML feed for a valid RSS route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(show0b91efaf),
+      })
+    );
+    const response = await handleRequest(
+      new Request("https://example.com/rss/0b91efaf-26e6-11e4-907f-782bcb6744eb")
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("application/xml");
+    const body = await response.text();
+    expect(body).toContain("<rss");
+    expect(body).toContain("Affaires sensibles");
+  });
+
   it("returns 500 when the upstream API fails on the RSS route", async () => {
     vi.stubGlobal(
       "fetch",
@@ -242,5 +327,28 @@ describe("handleRequest", () => {
       new Request("https://example.com/rss/0b91efaf-26e6-11e4-907f-782bcb6744eb")
     );
     expect(response.status).toBe(500);
+  });
+
+  it("returns search results JSON for a valid search route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(searchFixture),
+      })
+    );
+    const response = await handleRequest(
+      new Request("https://example.com/search/?query=affaires+sensibles")
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("application/json");
+    const body = await response.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBeGreaterThan(0);
+  });
+
+  it("returns 400 when search query param is missing", async () => {
+    const response = await handleRequest(new Request("https://example.com/search/"));
+    expect(response.status).toBe(400);
   });
 });
