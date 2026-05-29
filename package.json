@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint worker-script.js",
-    "format": "prettier --write worker-script.js",
-    "format:check": "prettier --check worker-script.js",
+    "lint": "eslint worker-script.js src/",
+    "format": "prettier --write worker-script.js src/ worker-script.test.js",
+    "format:check": "prettier --check worker-script.js src/ worker-script.test.js",
     "test": "vitest run"
   },
   "devDependencies": {

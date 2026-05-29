@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getImgUrl, buildFeed, getSearchResults, handleRequest } from "./worker-script.js";
+import { getImgUrl, buildFeed } from "./src/feed.js";
+import { getSearchResults } from "./src/api.js";
+import { handleRequest } from "./worker-script.js";
 import show0b91efaf from "./fixtures/api-show-0b91efaf.json" with { type: "json" };
 import show4a41823f from "./fixtures/api-show-4a41823f.json" with { type: "json" };
 import searchFixture from "./fixtures/api-search-response.json" with { type: "json" };
