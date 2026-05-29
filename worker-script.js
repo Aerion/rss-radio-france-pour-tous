@@ -93,7 +93,7 @@ const buildFeed = (
     return !!innerText ? `<${name}>${innerText}</${name}>` : "";
   };
   const buildImgElement = (url) => {
-    return !!url ? `<itunes:image href="${imgUrl}"/>` : "";
+    return !!url ? `<itunes:image href="${url}"/>` : "";
   };
 
   const escapeXml = (unsafe) => {
