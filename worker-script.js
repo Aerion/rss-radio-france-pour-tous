@@ -355,41 +355,46 @@ const getSearchResults = async (query) => {
 };
 
 const handleRequest = async (request) => {
-  const url = new URL(request.url);
+  try {
+    const url = new URL(request.url);
 
-  if (url.pathname.startsWith(routePrefixRss)) {
-    const showId = url.pathname.substring(routePrefixRss.length);
-    const page = parseInt(url.searchParams.get("page") || "0", 10);
-    const showDiffusions = await getShowDiffusions(showId, page);
+    if (url.pathname.startsWith(routePrefixRss)) {
+      const showId = url.pathname.substring(routePrefixRss.length);
+      const page = parseInt(url.searchParams.get("page") || "0", 10);
+      const showDiffusions = await getShowDiffusions(showId, page);
 
-    let nextPageUrl;
-    if (showDiffusions.nextPageIdx !== undefined) {
-      nextPageUrl = new URL(url);
-      nextPageUrl.searchParams.delete("page");
-      nextPageUrl.searchParams.append("page", showDiffusions.nextPageIdx);
+      let nextPageUrl;
+      if (showDiffusions.nextPageIdx !== undefined) {
+        nextPageUrl = new URL(url);
+        nextPageUrl.searchParams.delete("page");
+        nextPageUrl.searchParams.append("page", showDiffusions.nextPageIdx);
+      } else {
+        nextPageUrl = undefined;
+      }
+      const feed = buildFeed(showDiffusions, nextPageUrl);
+      return new Response(feed, {
+        headers: {
+          "Content-Type": "application/xml; charset=utf-8",
+        },
+      });
+    } else if (url.pathname === routeSearch) {
+      const searchResults = await getSearchResults(url.searchParams.get("query"));
+      return new Response(JSON.stringify(searchResults), {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    } else if (url.pathname === "/") {
+      return new Response(getHomePageContents(), {
+        headers: {
+          "Content-Type": "text/html",
+        },
+      });
     } else {
-      nextPageUrl = undefined;
+      return new Response(null, { status: 404, statusText: "Not found" });
     }
-    const feed = buildFeed(showDiffusions, nextPageUrl);
-    return new Response(feed, {
-      headers: {
-        "Content-Type": "application/xml; charset=utf-8",
-      },
-    });
-  } else if (url.pathname === routeSearch) {
-    const searchResults = await getSearchResults(url.searchParams.get("query"));
-    return new Response(JSON.stringify(searchResults), {
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-  } else if (url.pathname === "/") {
-    return new Response(getHomePageContents(), {
-      headers: {
-        "Content-Type": "text/html",
-      },
-    });
-  } else {
-    return new Response(null, { status: 404, statusText: "Not found" });
+  } catch (error) {
+    console.error("Unhandled error in handleRequest", error);
+    return new Response("Internal Server Error", { status: 500 });
   }
 };
