@@ -312,12 +312,20 @@ const getHomePageContents = () => {
         return;
       }
 
-      const response = await fetch(
-        "${baseUrl}/search/?query=" +
-          encodeURIComponent(query)
-      );
-      const searchResults = await response.json();
-      setSearchResults(searchResults);
+      try {
+        const response = await fetch(
+          "${baseUrl}/search/?query=" +
+            encodeURIComponent(query)
+        );
+        if (!response.ok) {
+          throw new Error(\`Erreur serveur : \${response.status}\`);
+        }
+        const searchResults = await response.json();
+        setSearchResults(searchResults);
+      } catch (error) {
+        console.error("Erreur lors de la recherche", error);
+        alert("Une erreur est survenue lors de la recherche. Veuillez réessayer.");
+      }
     };
     form.addEventListener("submit", handleSubmit);
   </script>
