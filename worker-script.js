@@ -40,18 +40,20 @@ const getShowDiffusions = async (showId, page) => {
     );
 
     if (showDetails === undefined) {
-      showDetails = json.included.shows[showId];
+      showDetails = json.included?.shows?.[showId];
       if (showDetails === undefined) {
         // For some reason, for some podcasts, the show is not included in the manifestations
         // It's very rare, but it's the case for the show 1aaba3dd-be85-4bbd-b046-c1343affc505
         // Mitigate it by calling the show details endpoint directly
         const showDetailsJson = await getRadioFranceUrl(`shows/${showId}`);
-        showDetails = showDetailsJson.data.shows;
+        showDetails = showDetailsJson.data?.shows;
       }
     }
 
-    diffusions.push(...json.data.map((item) => item.diffusions));
-    for (const k in json.included.manifestations) {
+    if (Array.isArray(json.data)) {
+      diffusions.push(...json.data.map((item) => item.diffusions));
+    }
+    for (const k in json.included?.manifestations) {
       manifestations[k] = json.included.manifestations[k];
     }
 
@@ -158,7 +160,7 @@ const buildFeed = (
   const buildItem = (diffusion) => {
     const manifestation =
       manifestations[
-        diffusion.relationships.manifestations.find(
+        diffusion.relationships?.manifestations?.find(
           (manifId) =>
             manifestations[manifId]?.principal &&
             !["youtube", "dailymotion"].includes(
@@ -327,11 +329,11 @@ const getSearchResults = async (query) => {
   const json = await getRadioFranceUrl(
     `/stations/search?value=${encodeURIComponent(query)}&include=show`
   );
-  return json.data
-    .filter((item) => item.resultItems.model === "show")
+  return (json.data ?? [])
+    .filter((item) => item.resultItems?.model === "show")
     .flatMap((item) => {
       try {
-        const show = json.included.shows[item.resultItems.relationships.show[0]];
+        const show = json.included?.shows?.[item.resultItems?.relationships?.show?.[0]];
 
         if (!show) {
           console.warn("Show not found in included data", item.resultItems.relationships.show[0]);
