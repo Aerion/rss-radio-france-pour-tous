@@ -1,6 +1,8 @@
-addEventListener("fetch", (event) => {
-  event.respondWith(handleRequest(event.request));
-});
+if (typeof addEventListener !== "undefined") {
+  addEventListener("fetch", (event) => {
+    event.respondWith(handleRequest(event.request));
+  });
+}
 
 const baseUrl = "https://radio-france-rss.aerion.workers.dev";
 const routePrefixRss = "/rss/";
@@ -353,6 +355,8 @@ const getSearchResults = async (query) => {
       }
     });
 };
+
+export { getImgUrl, buildFeed, getSearchResults, handleRequest };
 
 const handleRequest = async (request) => {
   try {
