@@ -7,11 +7,13 @@
     "lint": "eslint worker-script.js src/",
     "format": "prettier --write worker-script.js src/ worker-script.test.js",
     "format:check": "prettier --check worker-script.js src/ worker-script.test.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "deploy": "wrangler deploy"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.0.0",
+    "wrangler": "^4.86.0"
   }
 }
