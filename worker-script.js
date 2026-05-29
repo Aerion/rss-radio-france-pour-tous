@@ -53,13 +53,13 @@ const getShowDiffusions = async (showId, page) => {
     }
 
     page += 1;
-  } while (shouldFetchAllDiffusions && json.links.next !== undefined);
+  } while (shouldFetchAllDiffusions && json.links?.next !== undefined);
 
   return {
     diffusions,
     showDetails,
     manifestations,
-    nextPageIdx: json.links.next !== undefined ? page : undefined,
+    nextPageIdx: json.links?.next !== undefined ? page : undefined,
   };
 };
 
