@@ -16,6 +16,9 @@ const getRadioFranceUrl = async (path) => {
       "x-token": "9ab343ce-cae2-4bdb-90ca-526a3dede870",
     },
   });
+  if (!response.ok) {
+    throw new Error(`Radio France API error: ${response.status} ${response.statusText} (${path})`);
+  }
   return await response.json();
 };
 
