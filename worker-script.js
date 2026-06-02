@@ -33,7 +33,11 @@ export const handleRequest = async (request) => {
         },
       });
     } else if (url.pathname === routeSearch) {
-      const searchResults = await getSearchResults(url.searchParams.get("query"));
+      const query = url.searchParams.get("query");
+      if (!query) {
+        return new Response("Missing query parameter", { status: 400 });
+      }
+      const searchResults = await getSearchResults(query);
       return new Response(JSON.stringify(searchResults), {
         headers: {
           "Content-Type": "application/json",

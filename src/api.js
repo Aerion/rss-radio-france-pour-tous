@@ -74,7 +74,7 @@ export const getShowDiffusions = async (showId, page) => {
  */
 export const getSearchResults = async (query) => {
   const json = await getRadioFranceUrl(
-    `/stations/search?value=${encodeURIComponent(query)}&include=show`
+    `stations/search?value=${encodeURIComponent(query)}&include=show`
   );
   return (json.data ?? [])
     .filter((item) => item.resultItems?.model === "show")

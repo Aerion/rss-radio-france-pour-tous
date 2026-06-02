@@ -36,7 +36,7 @@ export const buildFeed = ({ diffusions, showDetails, manifestations }, nextPageU
   };
 
   const escapeXml = (unsafe) => {
-    if (typeof unsafe === "undefined") return unsafe;
+    if (unsafe == null) return unsafe;
 
     let escaped;
     // From https://stackoverflow.com/a/27979933
@@ -126,7 +126,6 @@ export const buildFeed = ({ diffusions, showDetails, manifestations }, nextPageU
           <itunes:duration>${new Date(manifestation.duration * 1000)
             .toISOString()
             .substring(11, 19)}</itunes:duration>
-          ${buildElement("itunes:image", diffusion.path)}
           ${buildImgElement(imgUrl)}
         </item>`;
   };
