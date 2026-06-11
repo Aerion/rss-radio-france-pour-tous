@@ -53,15 +53,9 @@ describe("getImgUrl", () => {
  * @param {string} showId
  */
 function fixtureToShowDiffusions(fixture, showId) {
-  const diffusions = fixture.data.map((item) => item.diffusions);
-  const manifestations = {};
-  for (const k in fixture.included.manifestations) {
-    manifestations[k] = fixture.included.manifestations[k];
-  }
   return {
-    diffusions,
+    diffusions: fixture.data.map((item) => item.diffusions),
     showDetails: fixture.included.shows[showId],
-    manifestations,
   };
 }
 
@@ -350,5 +344,34 @@ describe("handleRequest", () => {
   it("returns 400 when search query param is missing", async () => {
     const response = await handleRequest(new Request("https://example.com/search/"));
     expect(response.status).toBe(400);
+  });
+
+  it("returns 302 redirect to mp3 URL for audio route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            data: { manifestations: { url: "https://cdn.example.com/audio.mp3", id: "some-id" } },
+          }),
+      })
+    );
+    const response = await handleRequest(
+      new Request("https://example.com/audio/301c6eb1-61d4-4120-8cd7-e415ffc4f7df")
+    );
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("https://cdn.example.com/audio.mp3");
+  });
+
+  it("returns 500 when manifestation API fails on audio route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 404, statusText: "Not Found" })
+    );
+    const response = await handleRequest(
+      new Request("https://example.com/audio/nonexistent-id")
+    );
+    expect(response.status).toBe(500);
   });
 });

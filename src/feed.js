@@ -1,3 +1,5 @@
+import { baseUrl, routePrefixAudio } from "./config.js";
+
 /**
  * @param {Array<{name: string, visual_uuid: string}>|null} visuals
  * @param {string|null} fallbackImgId - visual_uuid used when visuals is empty
@@ -23,11 +25,11 @@ export const getImgUrl = (visuals, fallbackImgId) => {
 };
 
 /**
- * @param {{diffusions: object[], showDetails: object, manifestations: object}} showData
+ * @param {{diffusions: object[], showDetails: object}} showData
  * @param {string|URL|null} nextPageUrl - URL for the atom:link next-page tag, or null
  * @returns {string} RSS XML feed
  */
-export const buildFeed = ({ diffusions, showDetails, manifestations }, nextPageUrl) => {
+export const buildFeed = ({ diffusions, showDetails }, nextPageUrl) => {
   const buildElement = (name, innerText) => {
     return innerText ? `<${name}>${innerText}</${name}>` : "";
   };
@@ -94,15 +96,8 @@ export const buildFeed = ({ diffusions, showDetails, manifestations }, nextPageU
   }
 
   const buildItem = (diffusion) => {
-    const manifestation =
-      manifestations[
-        diffusion.relationships?.manifestations?.find(
-          (manifId) =>
-            manifestations[manifId]?.principal &&
-            !["youtube", "dailymotion"].includes(manifestations[manifId]?.mediaType)
-        )
-      ];
-    if (typeof manifestation === "undefined") {
+    const manifestationId = diffusion.relationships?.manifestations?.[0];
+    if (!manifestationId) {
       console.log(`Item ${diffusion.id} visible at ${diffusion.path} has no mp3 version, skipping`);
       return "";
     }
@@ -110,10 +105,11 @@ export const buildFeed = ({ diffusions, showDetails, manifestations }, nextPageU
     let guid = diffusion.id;
     if (new Date(diffusion.createdTime * 1000) <= new Date("Sep 12 2022")) {
       // backward compatibility: keep old id generation.
-      guid = manifestation.id;
+      guid = manifestationId;
     }
 
     const description = diffusion.standfirst ?? diffusion.bodyMarkdown ?? "";
+    const enclosureUrl = `${baseUrl}${routePrefixAudio}${manifestationId}`;
 
     const imgUrl = getImgUrl(diffusion.visuals, diffusion.mainImage);
     return `    <item>
@@ -121,11 +117,8 @@ export const buildFeed = ({ diffusions, showDetails, manifestations }, nextPageU
           <guid>${guid}</guid>
           ${buildElement("link", diffusion.path)}
           <description>${escapeXml(description)}</description>
-          <enclosure url="${escapeXml(manifestation.url)}" type="audio/mpeg" />
+          <enclosure url="${escapeXml(enclosureUrl)}" type="audio/mpeg" />
           <pubDate>${new Date(diffusion.createdTime * 1000).toUTCString()}</pubDate>
-          <itunes:duration>${new Date(manifestation.duration * 1000)
-            .toISOString()
-            .substring(11, 19)}</itunes:duration>
           ${buildImgElement(imgUrl)}
         </item>`;
   };

@@ -20,11 +20,10 @@ const getRadioFranceUrl = async (path) => {
 /**
  * @param {string} showId
  * @param {number} page - 0-based page index, or -1 to fetch all pages
- * @returns {Promise<{diffusions: object[], showDetails: object, manifestations: object, nextPageIdx: number|undefined}>}
+ * @returns {Promise<{diffusions: object[], showDetails: object, nextPageIdx: number|undefined}>}
  */
 export const getShowDiffusions = async (showId, page) => {
   const diffusions = [];
-  const manifestations = [];
   let showDetails = undefined;
 
   const shouldFetchAllDiffusions = page === -1;
@@ -36,13 +35,13 @@ export const getShowDiffusions = async (showId, page) => {
 
   do {
     json = await getRadioFranceUrl(
-      `shows/${showId}/diffusions?filter[manifestations][exists]=true&include=show&include=manifestations&include=series&page[offset]=${page}`
+      `shows/${showId}/diffusions?filter[manifestations][exists]=true&include=show&include=series&page[offset]=${page}`
     );
 
     if (showDetails === undefined) {
       showDetails = json.included?.shows?.[showId];
       if (showDetails === undefined) {
-        // For some reason, for some podcasts, the show is not included in the manifestations
+        // For some reason, for some podcasts, the show is not included in the response.
         // It's very rare, but it's the case for the show 1aaba3dd-be85-4bbd-b046-c1343affc505
         // Mitigate it by calling the show details endpoint directly
         const showDetailsJson = await getRadioFranceUrl(`shows/${showId}`);
@@ -53,9 +52,6 @@ export const getShowDiffusions = async (showId, page) => {
     if (Array.isArray(json.data)) {
       diffusions.push(...json.data.map((item) => item.diffusions));
     }
-    for (const k in json.included?.manifestations) {
-      manifestations[k] = json.included.manifestations[k];
-    }
 
     page += 1;
   } while (shouldFetchAllDiffusions && json.links?.next !== undefined);
@@ -63,9 +59,21 @@ export const getShowDiffusions = async (showId, page) => {
   return {
     diffusions,
     showDetails,
-    manifestations,
     nextPageIdx: json.links?.next !== undefined ? page : undefined,
   };
+};
+
+/**
+ * @param {string} manifestationId
+ * @returns {Promise<string>} the mp3 URL
+ */
+export const getManifestationUrl = async (manifestationId) => {
+  const json = await getRadioFranceUrl(`manifestations/${manifestationId}`);
+  const url = json?.data?.manifestations?.url;
+  if (!url) {
+    throw new Error(`No URL found for manifestation ${manifestationId}`);
+  }
+  return url;
 };
 
 /**

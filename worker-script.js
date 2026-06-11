@@ -1,7 +1,7 @@
-import { getShowDiffusions, getSearchResults } from "./src/api.js";
+import { getShowDiffusions, getSearchResults, getManifestationUrl } from "./src/api.js";
 import { buildFeed } from "./src/feed.js";
 import { getHomePageContents } from "./src/html.js";
-import { routePrefixRss, routeSearch } from "./src/config.js";
+import { routePrefixRss, routeSearch, routePrefixAudio } from "./src/config.js";
 
 if (typeof addEventListener !== "undefined") {
   addEventListener("fetch", (event) => {
@@ -32,6 +32,10 @@ export const handleRequest = async (request) => {
           "Content-Type": "application/xml; charset=utf-8",
         },
       });
+    } else if (url.pathname.startsWith(routePrefixAudio)) {
+      const manifestationId = url.pathname.substring(routePrefixAudio.length);
+      const mp3Url = await getManifestationUrl(manifestationId);
+      return Response.redirect(mp3Url, 302);
     } else if (url.pathname === routeSearch) {
       const query = url.searchParams.get("query");
       if (!query) {
