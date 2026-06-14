@@ -286,6 +286,15 @@ describe("handleRequest", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns robots.txt disallowing rss and audio routes", async () => {
+    const response = await handleRequest(new Request("https://example.com/robots.txt"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/plain");
+    const body = await response.text();
+    expect(body).toContain("Disallow: /rss/");
+    expect(body).toContain("Disallow: /audio/");
+  });
+
   it("returns HTML for the homepage", async () => {
     const response = await handleRequest(new Request("https://example.com/"));
     expect(response.status).toBe(200);

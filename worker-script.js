@@ -47,6 +47,11 @@ export const handleRequest = async (request) => {
           "Content-Type": "application/json",
         },
       });
+    } else if (url.pathname === "/robots.txt") {
+      return new Response(
+        `User-agent: *\nDisallow: ${routePrefixRss}\nDisallow: ${routePrefixAudio}\n`,
+        { headers: { "Content-Type": "text/plain" } }
+      );
     } else if (url.pathname === "/") {
       return new Response(getHomePageContents(), {
         headers: {
