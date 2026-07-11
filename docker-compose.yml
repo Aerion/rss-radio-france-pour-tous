@@ -81,6 +81,7 @@ services:
     depends_on:
       - prometheus
       - loki
+      - postgres
 
 volumes:
   prometheus_data:

@@ -13,3 +13,15 @@ datasources:
     type: loki
     access: proxy
     url: http://loki:3100
+  - name: Postgres
+    uid: postgres
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: rss
+    user: rss
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1700

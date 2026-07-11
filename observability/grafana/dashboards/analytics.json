@@ -1,0 +1,57 @@
+{
+  "uid": "radio-france-rss-analytics",
+  "title": "Radio France RSS - Analytics",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "RSS requests per show",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT show_title AS \"Show\", count(*) AS \"Requests\"\nFROM request_log\nWHERE route = 'rss' AND show_title IS NOT NULL AND $__timeFilter(created_at)\nGROUP BY show_title\nORDER BY 2 DESC\nLIMIT 25",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Requests by route over time",
+      "type": "timeseries",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroup(created_at, '1h') AS time, route AS metric, count(*) AS value\nFROM request_log\nWHERE $__timeFilter(created_at)\nGROUP BY 1, route\nORDER BY 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "User-agent breakdown",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT user_agent AS \"User agent\", count(*) AS \"Requests\"\nFROM request_log\nWHERE user_agent IS NOT NULL AND user_agent != '' AND $__timeFilter(created_at)\nGROUP BY user_agent\nORDER BY 2 DESC\nLIMIT 25",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
