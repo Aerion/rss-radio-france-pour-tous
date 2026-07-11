@@ -126,6 +126,82 @@ func TestBuild_EnclosureHasAudioMpegType(t *testing.T) {
 	}
 }
 
+func TestBuild_DescriptionFallback(t *testing.T) {
+	cases := map[string]struct {
+		standfirst   string
+		bodyMarkdown string
+		want         string
+	}{
+		"real bodyMarkdown used as-is, standfirst ignored": {
+			standfirst:   "A real teaser",
+			bodyMarkdown: "Long form notes follow here.",
+			want:         "Long form notes follow here.",
+		},
+		"placeholder bodyMarkdown (period) falls back to standfirst": {
+			standfirst:   "A real teaser",
+			bodyMarkdown: ".",
+			want:         "A real teaser",
+		},
+		"placeholder bodyMarkdown (whitespace) falls back to standfirst": {
+			standfirst:   "A real teaser",
+			bodyMarkdown: "  ",
+			want:         "A real teaser",
+		},
+		"empty bodyMarkdown falls back to standfirst": {
+			standfirst:   "A real teaser",
+			bodyMarkdown: "",
+			want:         "A real teaser",
+		},
+		"both placeholder yields empty description": {
+			standfirst: ".", bodyMarkdown: " . ",
+			want: "",
+		},
+		"both empty yields empty description": {
+			standfirst: "", bodyMarkdown: "",
+			want: "",
+		},
+		"bodyMarkdown strips shortcodes": {
+			standfirst:   "ignored",
+			bodyMarkdown: "Des espions et des livres.\n\n{% bounce 1 abc123 %22title%22 %}\n\nLa suite.",
+			want:         "Des espions et des livres.\n\nLa suite.",
+		},
+		"standfirst fallback used verbatim, shortcodes not stripped": {
+			standfirst:   "A teaser with {% something %} inside",
+			bodyMarkdown: ".",
+			want:         "A teaser with {% something %} inside",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			d := diffusionWithManifestation("d1", 1700000000)
+			d.Standfirst = tc.standfirst
+			d.BodyMarkdown = tc.bodyMarkdown
+
+			out, err := testBuilder.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+
+			// Parse rather than substring-match: encoding/xml escapes
+			// newlines within text as "&#xA;" (valid, semantically
+			// identical to a raw newline), so comparing decoded content
+			// is the correct check here, not a literal string match.
+			var parsed struct {
+				Item struct {
+					Description string `xml:"description"`
+				} `xml:"channel>item"`
+			}
+			if err := xml.Unmarshal([]byte(out), &parsed); err != nil {
+				t.Fatalf("output does not parse as XML: %v\n%s", err, out)
+			}
+			if parsed.Item.Description != tc.want {
+				t.Errorf("description = %q, want %q", parsed.Item.Description, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuild_UnicodeTitleSurvives(t *testing.T) {
 	d := diffusionWithManifestation("d1", 1700000000)
 	d.Title = "25 juin 1977, la première Marche des fiertés LGBT+"
@@ -185,6 +261,57 @@ func TestBuild_StripsInvalidXMLCharacters(t *testing.T) {
 	}
 	if !strings.Contains(out, "Badcharshere") {
 		t.Errorf("expected sanitized title to remain readable:\n%s", out)
+	}
+}
+
+func TestIsPlaceholder(t *testing.T) {
+	cases := map[string]bool{
+		"":           true,
+		".":          true,
+		" ":          true,
+		"  .  ":      true,
+		"...":        true,
+		"Real text":  false,
+		"Real text.": false,
+		".Real text": false,
+		"a":          false,
+	}
+	for in, want := range cases {
+		if got := isPlaceholder(in); got != want {
+			t.Errorf("isPlaceholder(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestStripShortcodes(t *testing.T) {
+	cases := map[string]struct{ in, want string }{
+		"no shortcode, unchanged": {
+			"Just plain text.", "Just plain text.",
+		},
+		"real example: bounce shortcode removed": {
+			`Des espions et des livres.
+
+{% bounce 1 66246ef9-0de7-464e-96e9-2d3ec6f49c49 %22L%E2%80%99%C3%A9tendard%20sanglant%20est%20lev%C3%A9%22%20de%20Benjamin%20Dierstein%C2%A0%3A%20un%20roman%20noir%20dans%20la%20France%201980-1982 %C3%80%20%C3%A9couter %}
+
+La suite de l'histoire.`,
+			"Des espions et des livres.\n\nLa suite de l'histoire.",
+		},
+		"shortcode inline within a sentence": {
+			"Before {% image abc123 %} after.", "Before after.",
+		},
+		"multiple shortcodes": {
+			"A {% foo 1 %} B {% bar 2 %} C", "A B C",
+		},
+		"only a shortcode yields empty": {
+			"{% bounce 1 abc %}", "",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got := stripShortcodes(tc.in); got != tc.want {
+				t.Errorf("stripShortcodes(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 

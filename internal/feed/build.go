@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -151,9 +152,12 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 		return item{}, false
 	}
 
-	description := d.Standfirst
-	if description == "" {
-		description = d.BodyMarkdown
+	description := stripShortcodes(d.BodyMarkdown)
+	if isPlaceholder(description) {
+		description = d.Standfirst
+		if isPlaceholder(description) {
+			description = ""
+		}
 	}
 
 	it := item{
@@ -174,6 +178,41 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 		it.Image = &itunesImage{Href: imgURL}
 	}
 	return it, true
+}
+
+// isPlaceholder reports whether s is empty or contains nothing but
+// whitespace/periods. Some diffusions carry a placeholder like "." or " "
+// in bodyMarkdown or standfirst instead of a genuinely empty string when
+// there's no real text - live samples found this on roughly half of one
+// show's episodes and ~10-30% of another's, so checking for "" alone
+// misses most of them. buildItem prefers the full bodyMarkdown (long-form
+// show notes) as the description, falling back to standfirst only when
+// bodyMarkdown is itself a placeholder.
+func isPlaceholder(s string) bool {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '.'
+	}) == ""
+}
+
+var (
+	shortcodePattern    = regexp.MustCompile(`\{%.*?%\}`)
+	multiSpacePattern   = regexp.MustCompile(`[ \t]{2,}`)
+	multiNewlinePattern = regexp.MustCompile(`\n{3,}`)
+)
+
+// stripShortcodes removes Radio France's CMS templating shortcodes from
+// bodyMarkdown text before it's used as a feed description fallback - e.g.
+// "{% bounce 1 <uuid> <url-encoded title> %}", a cross-promotion call-out
+// their own app/website renders as a card. Left in raw, a shortcode like
+// that shows up as ugly URL-encoded gibberish in a plain-text RSS
+// description instead of being invisible the way it is in their own app.
+// Also collapses whatever extra whitespace/blank lines a removed shortcode
+// leaves behind.
+func stripShortcodes(s string) string {
+	s = shortcodePattern.ReplaceAllString(s, "")
+	s = multiSpacePattern.ReplaceAllString(s, " ")
+	s = multiNewlinePattern.ReplaceAllString(s, "\n\n")
+	return strings.TrimSpace(s)
 }
 
 // formatItunesDuration renders d as HH:MM:SS, the conventional
