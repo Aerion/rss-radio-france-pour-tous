@@ -1,13 +1,45 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      target: app
     ports:
       - "127.0.0.1:8080:8080"
     environment:
       PORT: "8080"
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set, see .env.example}
       RADIOFRANCE_API_TOKEN: ${RADIOFRANCE_API_TOKEN:?RADIOFRANCE_API_TOKEN must be set, see .env.example}
+      DATABASE_URL: postgres://rss:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set, see .env.example}@postgres:5432/rss?sslmode=disable
     restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: rss
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set, see .env.example}
+      POSTGRES_DB: rss
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rss"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      DATABASE_URL: postgres://rss:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set, see .env.example}@postgres:5432/rss?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   prometheus:
     image: prom/prometheus:v3.0.1
@@ -54,3 +86,4 @@ volumes:
   prometheus_data:
   loki_data:
   grafana_data:
+  pgdata:

@@ -9,11 +9,17 @@ COPY cmd ./cmd
 COPY internal ./internal
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /out/server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/migrate ./cmd/migrate
 
 # distroless static (not scratch) so we get a CA bundle for HTTPS calls to
 # api.radiofrance.fr, plus a non-root user, at no extra image-build cost.
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot AS app
 COPY --from=builder /out/server /server
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/server"]
+
+FROM gcr.io/distroless/static-debian12:nonroot AS migrate
+COPY --from=builder /out/migrate /migrate
+USER nonroot:nonroot
+ENTRYPOINT ["/migrate"]
