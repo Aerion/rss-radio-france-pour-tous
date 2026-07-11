@@ -3,16 +3,33 @@ package radiofrance
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
-// GetManifestationURL resolves a manifestation's real audio URL.
-func (c *Client) GetManifestationURL(ctx context.Context, manifestationID string) (string, error) {
+// GetManifestation resolves a manifestation's playback details.
+func (c *Client) GetManifestation(ctx context.Context, manifestationID string) (ManifestationDetails, error) {
 	var resp manifestationResponse
 	if err := c.doGet(ctx, "manifestation", fmt.Sprintf("manifestations/%s", manifestationID), &resp); err != nil {
-		return "", err
+		return ManifestationDetails{}, err
 	}
-	if resp.Data.Manifestations.URL == "" {
-		return "", fmt.Errorf("no URL found for manifestation %s", manifestationID)
+
+	m := resp.Data.Manifestations
+	if m.URL == "" {
+		return ManifestationDetails{}, fmt.Errorf("no URL found for manifestation %s", manifestationID)
 	}
-	return resp.Data.Manifestations.URL, nil
+
+	details := ManifestationDetails{
+		URL:       m.URL,
+		Duration:  time.Duration(m.Duration) * time.Second,
+		Principal: m.Principal,
+	}
+	switch {
+	case m.DownloadExpirationDate != nil:
+		t := time.Unix(*m.DownloadExpirationDate, 0)
+		details.ExpiresAt = &t
+	case m.StreamExpirationDate != nil:
+		t := time.Unix(*m.StreamExpirationDate, 0)
+		details.ExpiresAt = &t
+	}
+	return details, nil
 }

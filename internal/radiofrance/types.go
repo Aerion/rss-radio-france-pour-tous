@@ -23,6 +23,8 @@
 // here since it wasn't hit in practice by the current fixtures/tests.
 package radiofrance
 
+import "time"
+
 // Visual is a cover-image variant as returned by the Radio France API.
 // Observed Name values: "square_banner", "square_visual", "background",
 // "banner", "visual_vertical", "concept_visual".
@@ -43,6 +45,12 @@ type Show struct {
 	// is empty. Always present on real shows.
 	MainImage string   `json:"mainImage"`
 	Visuals   []Visual `json:"visuals"`
+	// Extra carries a grab-bag of editorial metadata; we only pick out the
+	// iTunes category fields, which map directly to <itunes:category>.
+	Extra struct {
+		ItunesCat    string `json:"itunesCat"`
+		ItunesSubCat string `json:"itunesSubCat"`
+	} `json:"extra"`
 }
 
 // Diffusion is a single podcast episode.
@@ -62,6 +70,12 @@ type Diffusion struct {
 	// pubDate and the guid backward-compatibility cutoff (see
 	// internal/feed).
 	CreatedTime int64 `json:"createdTime"`
+	// UpdatedTime is a Unix timestamp (seconds) that changes whenever this
+	// diffusion is edited/republished (e.g. relinked manifestations),
+	// independently of CreatedTime. Used by internal/episodecache as a
+	// cheap "has this episode changed" cache-invalidation signal, cheaper
+	// than re-fetching and diffing the manifestation itself.
+	UpdatedTime int64 `json:"updatedTime"`
 	// MainImage is a visual UUID, used as ImageURL's fallback. Like Path,
 	// it's sometimes absent (correlates with Path being absent too) - the
 	// show's own MainImage is the fallback in that case.
@@ -133,8 +147,34 @@ type manifestationResponse struct {
 			// and proxycast.radiofrance.fr (download) - not otherwise
 			// distinguished by this client.
 			URL string `json:"url"`
+			// Duration in seconds. This is the field the pre-rewrite feed
+			// was missing itunes:duration from - it only lives here, not
+			// on the diffusion.
+			Duration int `json:"duration"`
+			// Principal is true for exactly one of a diffusion's ~8
+			// sibling manifestations. See ManifestationID's doc comment:
+			// this client fetches only one manifestation per diffusion
+			// (not all siblings), so Principal here just reports whether
+			// the one we happened to fetch is the designated one - it does
+			// not mean we searched for and selected the principal variant.
+			Principal bool `json:"principal"`
+			// DownloadExpirationDate/StreamExpirationDate (Unix seconds,
+			// absent if not applicable) - the URL above can stop working
+			// after this date. See ManifestationDetails.ExpiresAt.
+			DownloadExpirationDate *int64 `json:"downloadExpirationDate"`
+			StreamExpirationDate   *int64 `json:"streamExpirationDate"`
 		} `json:"manifestations"`
 	} `json:"data"`
+}
+
+// ManifestationDetails is a manifestation's playback-relevant fields.
+type ManifestationDetails struct {
+	URL       string
+	Duration  time.Duration
+	Principal bool
+	// ExpiresAt is when URL may stop working, or nil if the API didn't
+	// report an expiration for this manifestation.
+	ExpiresAt *time.Time
 }
 
 // searchResponse is the raw shape of GET stations/search.
