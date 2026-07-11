@@ -49,9 +49,15 @@ func testShow() radiofrance.Show {
 	}
 }
 
+// sd bundles diffusions and show into a radiofrance.ShowDiffusions, as
+// Build now expects.
+func sd(diffusions []radiofrance.Diffusion, show radiofrance.Show) radiofrance.ShowDiffusions {
+	return radiofrance.ShowDiffusions{Diffusions: diffusions, ShowDetails: show}
+}
+
 func TestBuild_ProducesWellFormedXML(t *testing.T) {
 	diffusions := []radiofrance.Diffusion{diffusionWithManifestation("d1", 1700000000)}
-	out, err := testBuilder.Build(context.Background(), diffusions, testShow(), "")
+	out, err := testBuilder.Build(context.Background(), sd(diffusions, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -72,7 +78,7 @@ func TestBuild_ProducesWellFormedXML(t *testing.T) {
 }
 
 func TestBuild_IncludesShowTitle(t *testing.T) {
-	out, err := testBuilder.Build(context.Background(), nil, testShow(), "")
+	out, err := testBuilder.Build(context.Background(), sd(nil, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -87,7 +93,7 @@ func TestBuild_OneItemPerDiffusionWithManifestation(t *testing.T) {
 		diffusionWithManifestation("d2", 1700001000),
 		diffusionWithManifestation("d3", 1700002000),
 	}
-	out, err := testBuilder.Build(context.Background(), diffusions, testShow(), "")
+	out, err := testBuilder.Build(context.Background(), sd(diffusions, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -100,7 +106,7 @@ func TestBuild_SkipsDiffusionsWithoutManifestation(t *testing.T) {
 	withManifestation := diffusionWithManifestation("d1", 1700000000)
 	withoutManifestation := radiofrance.Diffusion{ID: "d2", Title: "No audio", CreatedTime: 1700001000}
 
-	out, err := testBuilder.Build(context.Background(), []radiofrance.Diffusion{withManifestation, withoutManifestation}, testShow(), "")
+	out, err := testBuilder.Build(context.Background(), sd([]radiofrance.Diffusion{withManifestation, withoutManifestation}, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -111,7 +117,7 @@ func TestBuild_SkipsDiffusionsWithoutManifestation(t *testing.T) {
 
 func TestBuild_EnclosureHasAudioMpegType(t *testing.T) {
 	diffusions := []radiofrance.Diffusion{diffusionWithManifestation("d1", 1700000000)}
-	out, err := testBuilder.Build(context.Background(), diffusions, testShow(), "")
+	out, err := testBuilder.Build(context.Background(), sd(diffusions, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -123,7 +129,7 @@ func TestBuild_EnclosureHasAudioMpegType(t *testing.T) {
 func TestBuild_UnicodeTitleSurvives(t *testing.T) {
 	d := diffusionWithManifestation("d1", 1700000000)
 	d.Title = "25 juin 1977, la première Marche des fiertés LGBT+"
-	out, err := testBuilder.Build(context.Background(), []radiofrance.Diffusion{d}, testShow(), "")
+	out, err := testBuilder.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -135,7 +141,7 @@ func TestBuild_UnicodeTitleSurvives(t *testing.T) {
 func TestBuild_NextPageLink(t *testing.T) {
 	diffusions := []radiofrance.Diffusion{diffusionWithManifestation("d1", 1700000000)}
 
-	withNext, err := testBuilder.Build(context.Background(), diffusions, testShow(), "https://radio-france-rss.example.com/rss/show-id?page=1")
+	withNext, err := testBuilder.Build(context.Background(), sd(diffusions, testShow()), "https://radio-france-rss.example.com/rss/show-id?page=1")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -143,7 +149,7 @@ func TestBuild_NextPageLink(t *testing.T) {
 		t.Errorf("expected atom:link rel=next with the next page URL:\n%s", withNext)
 	}
 
-	withoutNext, err := testBuilder.Build(context.Background(), diffusions, testShow(), "")
+	withoutNext, err := testBuilder.Build(context.Background(), sd(diffusions, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -155,7 +161,7 @@ func TestBuild_NextPageLink(t *testing.T) {
 func TestBuild_EscapesSpecialCharacters(t *testing.T) {
 	show := testShow()
 	show.Title = `Le Podcast <Super> & "Cool"`
-	out, err := testBuilder.Build(context.Background(), nil, show, "")
+	out, err := testBuilder.Build(context.Background(), sd(nil, show), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -170,7 +176,7 @@ func TestBuild_EscapesSpecialCharacters(t *testing.T) {
 func TestBuild_StripsInvalidXMLCharacters(t *testing.T) {
 	d := diffusionWithManifestation("d1", 1700000000)
 	d.Title = "Bad\x0Bchars\x00here"
-	out, err := testBuilder.Build(context.Background(), []radiofrance.Diffusion{d}, testShow(), "")
+	out, err := testBuilder.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -213,7 +219,7 @@ type fakeResolver struct {
 	durationsByDiffusionID map[string]time.Duration
 }
 
-func (f fakeResolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion) (string, time.Duration) {
+func (f fakeResolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (string, time.Duration) {
 	return d.ManifestationID(), f.durationsByDiffusionID[d.ID]
 }
 
@@ -224,7 +230,7 @@ func TestBuild_IncludesDurationWhenResolverProvidesIt(t *testing.T) {
 	}
 	diffusions := []radiofrance.Diffusion{diffusionWithManifestation("d1", 1700000000)}
 
-	out, err := b.Build(context.Background(), diffusions, testShow(), "")
+	out, err := b.Build(context.Background(), sd(diffusions, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -236,7 +242,7 @@ func TestBuild_IncludesDurationWhenResolverProvidesIt(t *testing.T) {
 func TestBuild_OmitsDurationWhenUnresolved(t *testing.T) {
 	diffusions := []radiofrance.Diffusion{diffusionWithManifestation("d1", 1700000000)}
 	// testBuilder has no Resolver configured.
-	out, err := testBuilder.Build(context.Background(), diffusions, testShow(), "")
+	out, err := testBuilder.Build(context.Background(), sd(diffusions, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -250,7 +256,7 @@ func TestBuild_IncludesItunesCategoryWhenPresent(t *testing.T) {
 	show.Extra.ItunesCat = "Society & Culture"
 	show.Extra.ItunesSubCat = "Documentary"
 
-	out, err := testBuilder.Build(context.Background(), nil, show, "")
+	out, err := testBuilder.Build(context.Background(), sd(nil, show), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -263,7 +269,7 @@ func TestBuild_IncludesItunesCategoryWhenPresent(t *testing.T) {
 }
 
 func TestBuild_OmitsItunesCategoryWhenAbsent(t *testing.T) {
-	out, err := testBuilder.Build(context.Background(), nil, testShow(), "")
+	out, err := testBuilder.Build(context.Background(), sd(nil, testShow()), "")
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}

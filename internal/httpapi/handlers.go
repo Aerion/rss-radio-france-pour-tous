@@ -79,7 +79,7 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		nextPageURL = fmt.Sprintf("%s%s?page=%d", s.publicBaseURL, r.URL.Path, *showDiffusions.NextPageIdx)
 	}
 
-	body, err := s.feedBuilder.Build(r.Context(), showDiffusions.Diffusions, showDiffusions.ShowDetails, nextPageURL)
+	body, err := s.feedBuilder.Build(r.Context(), showDiffusions, nextPageURL)
 	if err != nil {
 		return err
 	}

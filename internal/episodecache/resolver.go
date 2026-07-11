@@ -40,43 +40,103 @@ func NewResolver(s store, f fetcher) *Resolver {
 }
 
 // Resolve returns the manifestation ID and duration to use for d's
-// enclosure/itunes:duration, used while building a show's feed. It never
-// returns an error to the caller: on any upstream failure it logs and
-// degrades to (d.ManifestationID(), 0), so one bad episode never fails the
-// whole feed.
-func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion) (manifestationID string, duration time.Duration) {
-	manifestationID = d.ManifestationID()
-	if manifestationID == "" {
+// enclosure/itunes:duration, used while building a show's feed. included is
+// whatever manifestation data came back inline with the diffusions page
+// (see radiofrance.ShowDiffusions.Manifestations) - not exhaustive.
+//
+// Prefers the manifestation flagged Principal by the API over d's default
+// (array position 0): live samples show non-principal manifestations carry
+// a real expiration date ~97% of the time, while the principal one never
+// does - so this is a correctness concern (dead links), not just cosmetic
+// preference. Tries, in order of cost: (1) principal already present in
+// included - free; (2) principal already cached from a previous
+// resolution - free; (3) live-fetch whichever siblings aren't already
+// known, stopping at the first principal found. Only degrades to d's
+// default manifestation (with no known duration) if every candidate
+// failed to fetch, which should be rare.
+//
+// Never returns an error to the caller: any upstream failure is logged and
+// degrades gracefully, so one bad episode never fails the whole feed.
+func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID string, duration time.Duration) {
+	candidates := d.Relationships.Manifestations
+	if len(candidates) == 0 {
 		return "", 0
 	}
 
-	if entry, ok, err := r.store.Get(ctx, manifestationID); err == nil && ok &&
-		entry.DiffusionUpdatedTime == d.UpdatedTime && entry.fresh() {
-		return manifestationID, entry.Duration
+	if id, m, ok := findPrincipal(candidates, included); ok {
+		r.cache(ctx, id, d, showID, showTitle, m)
+		return id, m.Duration
 	}
 
-	details, err := r.fetcher.GetManifestation(ctx, manifestationID)
-	if err != nil {
-		slog.Warn("episodecache: failed to resolve manifestation, feed item will have no duration",
-			"manifestationID", manifestationID, "error", err)
-		return manifestationID, 0
+	if id, e, ok := r.findCachedPrincipal(ctx, candidates, d.UpdatedTime); ok {
+		return id, e.Duration
 	}
 
+	fallbackID, fallbackDuration := "", time.Duration(0)
+	for _, id := range candidates {
+		if _, known := included[id]; known {
+			continue // already checked above, wasn't principal
+		}
+		details, err := r.fetcher.GetManifestation(ctx, id)
+		if err != nil {
+			slog.Warn("episodecache: failed to fetch a candidate manifestation", "manifestationID", id, "error", err)
+			continue
+		}
+		r.cache(ctx, id, d, showID, showTitle, details)
+		if details.Principal {
+			return id, details.Duration
+		}
+		if fallbackID == "" {
+			fallbackID, fallbackDuration = id, details.Duration
+		}
+	}
+	if fallbackID != "" {
+		return fallbackID, fallbackDuration
+	}
+
+	slog.Warn("episodecache: no candidate manifestation could be resolved, feed item will have no duration",
+		"diffusionID", d.ID)
+	return d.ManifestationID(), 0
+}
+
+// findPrincipal returns the first of candidates flagged Principal in
+// included, if any.
+func findPrincipal(candidates []string, included map[string]radiofrance.ManifestationDetails) (string, radiofrance.ManifestationDetails, bool) {
+	for _, id := range candidates {
+		if m, ok := included[id]; ok && m.Principal {
+			return id, m, true
+		}
+	}
+	return "", radiofrance.ManifestationDetails{}, false
+}
+
+// findCachedPrincipal returns the first of candidates that's cached,
+// flagged Principal, and still fresh for diffusionUpdatedTime.
+func (r *Resolver) findCachedPrincipal(ctx context.Context, candidates []string, diffusionUpdatedTime int64) (string, Entry, bool) {
+	for _, id := range candidates {
+		if e, ok, err := r.store.Get(ctx, id); err == nil && ok && e.Principal &&
+			e.DiffusionUpdatedTime == diffusionUpdatedTime && e.fresh() {
+			return id, e, true
+		}
+	}
+	return "", Entry{}, false
+}
+
+func (r *Resolver) cache(ctx context.Context, id string, d radiofrance.Diffusion, showID, showTitle string, m radiofrance.ManifestationDetails) {
 	entry := Entry{
-		ManifestationID:      manifestationID,
+		ManifestationID:      id,
 		DiffusionID:          d.ID,
 		ShowID:               showID,
 		ShowTitle:            showTitle,
-		URL:                  details.URL,
-		Duration:             details.Duration,
-		Principal:            details.Principal,
+		URL:                  m.URL,
+		Duration:             m.Duration,
+		Principal:            m.Principal,
 		DiffusionUpdatedTime: d.UpdatedTime,
-		ExpiresAt:            details.ExpiresAt,
+		ExpiresAt:            m.ExpiresAt,
 	}
 	if err := r.store.Upsert(ctx, entry); err != nil {
-		slog.Error("episodecache: failed to cache manifestation", "manifestationID", manifestationID, "error", err)
+		slog.Error("episodecache: failed to cache manifestation", "manifestationID", id, "error", err)
 	}
-	return manifestationID, details.Duration
 }
 
 // ResolveAudioURL returns the playable URL for manifestationID, used by

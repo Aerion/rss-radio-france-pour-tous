@@ -32,11 +32,14 @@ const resolveConcurrency = 8
 
 // ManifestationResolver looks up the manifestation ID and duration to use
 // for a diffusion's enclosure/itunes:duration - typically backed by
-// internal/episodecache, consulting a cache before the Radio France API.
+// internal/episodecache, consulting a cache (and preferring the API's
+// Principal manifestation) before falling back to the Radio France API.
+// included is whatever manifestation data came back inline with the
+// diffusions page (see radiofrance.ShowDiffusions.Manifestations).
 // Declared here rather than importing episodecache directly so this
 // package doesn't need to know about caching/storage at all.
 type ManifestationResolver interface {
-	Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion) (manifestationID string, duration time.Duration)
+	Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID string, duration time.Duration)
 }
 
 // Builder builds RSS feeds for shows.
@@ -52,14 +55,15 @@ type Builder struct {
 	Resolver ManifestationResolver
 }
 
-// Build renders an RSS 2.0 feed for a show's diffusions. nextPageURL, if
-// non-empty, is advertised as an atom:link rel="next" for feed readers that
-// support paginated feeds (RFC 5005).
-func (b Builder) Build(ctx context.Context, diffusions []radiofrance.Diffusion, show radiofrance.Show, nextPageURL string) (string, error) {
-	resolved := b.resolveAll(ctx, show.ID, show.Title, diffusions)
+// Build renders an RSS 2.0 feed for one page of a show's diffusions.
+// nextPageURL, if non-empty, is advertised as an atom:link rel="next" for
+// feed readers that support paginated feeds (RFC 5005).
+func (b Builder) Build(ctx context.Context, sd radiofrance.ShowDiffusions, nextPageURL string) (string, error) {
+	show := sd.ShowDetails
+	resolved := b.resolveAll(ctx, sd)
 
-	items := make([]item, 0, len(diffusions))
-	for _, d := range diffusions {
+	items := make([]item, 0, len(sd.Diffusions))
+	for _, d := range sd.Diffusions {
 		it, ok := b.buildItem(d, resolved[d.ID])
 		if !ok {
 			continue
@@ -114,11 +118,11 @@ type resolution struct {
 // concurrently (bounded by resolveConcurrency), keyed by diffusion ID. With
 // no Resolver configured, this is just each diffusion's raw
 // ManifestationID with no upstream calls at all.
-func (b Builder) resolveAll(ctx context.Context, showID, showTitle string, diffusions []radiofrance.Diffusion) map[string]resolution {
-	results := make(map[string]resolution, len(diffusions))
+func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) map[string]resolution {
+	results := make(map[string]resolution, len(sd.Diffusions))
 
 	if b.Resolver == nil {
-		for _, d := range diffusions {
+		for _, d := range sd.Diffusions {
 			results[d.ID] = resolution{manifestationID: d.ManifestationID()}
 		}
 		return results
@@ -127,9 +131,9 @@ func (b Builder) resolveAll(ctx context.Context, showID, showTitle string, diffu
 	var mu sync.Mutex
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(resolveConcurrency)
-	for _, d := range diffusions {
+	for _, d := range sd.Diffusions {
 		g.Go(func() error {
-			manifestationID, duration := b.Resolver.Resolve(gctx, showID, showTitle, d)
+			manifestationID, duration := b.Resolver.Resolve(gctx, sd.ShowDetails.ID, sd.ShowDetails.Title, d, sd.Manifestations)
 			mu.Lock()
 			results[d.ID] = resolution{manifestationID: manifestationID, duration: duration}
 			mu.Unlock()
