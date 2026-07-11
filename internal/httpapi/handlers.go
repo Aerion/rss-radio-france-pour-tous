@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+
+	"github.com/Aerion/rss-radio-france-pour-tous/internal/analytics"
 )
 
 func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) error {
@@ -70,6 +72,7 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	analytics.WithShow(r.Context(), showID, showDiffusions.ShowDetails.Title)
 
 	var nextPageURL string
 	if showDiffusions.NextPageIdx != nil {

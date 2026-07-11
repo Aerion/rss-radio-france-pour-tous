@@ -11,13 +11,24 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Aerion/rss-radio-france-pour-tous/internal/analytics"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/config"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/httpapi"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/observability"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
 )
 
-const serviceName = "radio-france-rss"
+const (
+	serviceName = "radio-france-rss"
+
+	analyticsBufferSize = 1000
+	analyticsWorkers    = 2
+
+	requestLogRetention        = 90 * 24 * time.Hour
+	requestLogRetentionCadence = time.Hour
+)
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
@@ -49,12 +60,21 @@ func run() error {
 		}
 	}()
 
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	analyticsWriter := analytics.NewWriter(pool, obs, analyticsBufferSize, analyticsWorkers)
+	go analyticsWriter.RunRetention(ctx, requestLogRetention, requestLogRetentionCadence)
+
 	client := radiofrance.NewClient(http.DefaultClient, cfg.RadioFranceAPIToken, obs)
 
 	server := httpapi.NewServer(client, cfg.PublicBaseURL)
 
 	mux := http.NewServeMux()
-	mux.Handle("/", server.Routes(obs))
+	mux.Handle("/", server.Routes(obs, analyticsWriter))
 	mux.Handle("GET /metrics", obs.Handler())
 
 	httpServer := &http.Server{

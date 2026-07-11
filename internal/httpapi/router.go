@@ -36,18 +36,24 @@ func NewServer(api API, publicBaseURL string) *Server {
 	}
 }
 
-// Instrumenter wraps a handler with metrics/logging under a short,
-// low-cardinality route name. Satisfied by *observability.Observability;
-// declared here so this package doesn't need to import it directly.
+// Instrumenter wraps a handler under a short, low-cardinality route name -
+// e.g. to record metrics/logs (*observability.Observability) or to
+// log an analytics event (*analytics.Writer). Declared here so this
+// package doesn't need to import either of those directly.
 type Instrumenter interface {
 	Wrap(route string, h http.HandlerFunc) http.HandlerFunc
 }
 
-// Routes returns the app's HTTP handler, with every route wrapped by instr.
-func (s *Server) Routes(instr Instrumenter) http.Handler {
+// Routes returns the app's HTTP handler, with every route wrapped by each
+// of instrs in turn (first one outermost).
+func (s *Server) Routes(instrs ...Instrumenter) http.Handler {
 	mux := http.NewServeMux()
 	register := func(pattern, route string, h handlerFunc) {
-		mux.HandleFunc(pattern, instr.Wrap(route, adapt(h)))
+		handler := adapt(h)
+		for i := len(instrs) - 1; i >= 0; i-- {
+			handler = instrs[i].Wrap(route, handler)
+		}
+		mux.HandleFunc(pattern, handler)
 	}
 	register("GET /{$}", "home", s.handleHome)
 	register("GET /robots.txt", "robots", s.handleRobots)

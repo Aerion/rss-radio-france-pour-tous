@@ -72,6 +72,21 @@ func TestObserveRequest_RecordsRadioFranceMetrics(t *testing.T) {
 	}
 }
 
+func TestObserveAnalyticsEvent_RecordsOutcome(t *testing.T) {
+	o := newTestObservability(t)
+	o.ObserveAnalyticsEvent("written")
+	o.ObserveAnalyticsEvent("dropped")
+	o.ObserveAnalyticsEvent("dropped")
+
+	body := scrapeMetrics(t, o)
+	if !strings.Contains(body, `analytics_events_total{outcome="written"} 1`) {
+		t.Errorf("expected a written=1 counter, got:\n%s", body)
+	}
+	if !strings.Contains(body, `analytics_events_total{outcome="dropped"} 2`) {
+		t.Errorf("expected a dropped=2 counter, got:\n%s", body)
+	}
+}
+
 func scrapeMetrics(t *testing.T, o *Observability) string {
 	t.Helper()
 	rec := httptest.NewRecorder()
