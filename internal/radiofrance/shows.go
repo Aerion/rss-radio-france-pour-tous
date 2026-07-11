@@ -52,7 +52,7 @@ func (c *Client) getDiffusionsPage(ctx context.Context, showID string, page int)
 		showID, page,
 	)
 	var resp diffusionsResponse
-	if err := c.doGet(ctx, path, &resp); err != nil {
+	if err := c.doGet(ctx, "diffusions", path, &resp); err != nil {
 		return diffusionsResponse{}, err
 	}
 	return resp, nil
@@ -60,7 +60,7 @@ func (c *Client) getDiffusionsPage(ctx context.Context, showID string, page int)
 
 func (c *Client) getShowDetails(ctx context.Context, showID string) (Show, error) {
 	var resp showResponse
-	if err := c.doGet(ctx, fmt.Sprintf("shows/%s", showID), &resp); err != nil {
+	if err := c.doGet(ctx, "show_details", fmt.Sprintf("shows/%s", showID), &resp); err != nil {
 		return Show{}, err
 	}
 	return resp.Data.Shows, nil

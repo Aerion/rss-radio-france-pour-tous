@@ -13,8 +13,11 @@ import (
 
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/config"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/httpapi"
+	"github.com/Aerion/rss-radio-france-pour-tous/internal/observability"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
 )
+
+const serviceName = "radio-france-rss"
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
@@ -31,16 +34,33 @@ func run() error {
 		return err
 	}
 
-	client := radiofrance.NewClient(nil, cfg.RadioFranceAPIToken)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	obs, err := observability.New(serviceName)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := obs.Shutdown(shutdownCtx); err != nil {
+			slog.Error("error shutting down observability providers", "error", err)
+		}
+	}()
+
+	client := radiofrance.NewClient(http.DefaultClient, cfg.RadioFranceAPIToken, obs)
+
 	server := httpapi.NewServer(client, cfg.PublicBaseURL)
+
+	mux := http.NewServeMux()
+	mux.Handle("/", server.Routes(obs))
+	mux.Handle("GET /metrics", obs.Handler())
 
 	httpServer := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: server.Routes(),
+		Handler: mux,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	serveErr := make(chan error, 1)
 	go func() {

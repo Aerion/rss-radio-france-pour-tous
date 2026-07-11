@@ -12,7 +12,7 @@ func (c *Client) Search(ctx context.Context, query string) ([]SearchResult, erro
 	path := fmt.Sprintf("stations/search?value=%s&include=show", url.QueryEscape(query))
 
 	var resp searchResponse
-	if err := c.doGet(ctx, path, &resp); err != nil {
+	if err := c.doGet(ctx, "search", path, &resp); err != nil {
 		return nil, err
 	}
 

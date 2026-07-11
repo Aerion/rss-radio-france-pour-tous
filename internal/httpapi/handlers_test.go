@@ -10,9 +10,15 @@ import (
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
 )
 
+// noopInstrumenter satisfies Instrumenter without recording anything -
+// these tests care about routing/handler behavior, not observability.
+type noopInstrumenter struct{}
+
+func (noopInstrumenter) Wrap(route string, h http.HandlerFunc) http.HandlerFunc { return h }
+
 func newTestServer(t *testing.T, api API) http.Handler {
 	t.Helper()
-	return NewServer(api, "https://radio-france-rss.example.com").Routes()
+	return NewServer(api, "https://radio-france-rss.example.com").Routes(noopInstrumenter{})
 }
 
 func TestHandleRequest_UnknownRoute404(t *testing.T) {

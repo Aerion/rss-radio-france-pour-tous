@@ -8,20 +8,34 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 const defaultBaseURL = "https://api.radiofrance.fr/v1/"
+
+// RequestObserver receives timing/outcome for each outbound Radio France
+// API call. Defined here rather than in a metrics package so this package
+// stays decoupled from any particular metrics backend;
+// observability.Observability implements it. ctx is passed through (rather
+// than just the call's own outcome/duration) so an implementation can
+// correlate the recorded metric with the current request.
+type RequestObserver interface {
+	ObserveRequest(ctx context.Context, endpoint string, ok bool, duration time.Duration)
+}
 
 // Client calls the Radio France mobile API.
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
 	token      string
+	// observer is nil-able; calls are simply unrecorded if it's nil.
+	observer RequestObserver
 }
 
 // NewClient creates a Radio France API client. httpClient may be nil, in
-// which case http.DefaultClient is used.
-func NewClient(httpClient *http.Client, token string) *Client {
+// which case http.DefaultClient is used. observer may be nil to skip
+// recording call metrics.
+func NewClient(httpClient *http.Client, token string, observer RequestObserver) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -29,6 +43,7 @@ func NewClient(httpClient *http.Client, token string) *Client {
 		httpClient: httpClient,
 		baseURL:    defaultBaseURL,
 		token:      token,
+		observer:   observer,
 	}
 }
 
@@ -43,7 +58,19 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("radio france API error: %d (%s)", e.StatusCode, e.Path)
 }
 
-func (c *Client) doGet(ctx context.Context, path string, out any) error {
+// doGet fetches path and decodes the JSON response into out. endpoint is a
+// short, low-cardinality label (e.g. "diffusions", "manifestation") used
+// for call metrics - not the raw path, which contains IDs.
+func (c *Client) doGet(ctx context.Context, endpoint, path string, out any) error {
+	start := time.Now()
+	err := c.get(ctx, path, out)
+	if c.observer != nil {
+		c.observer.ObserveRequest(ctx, endpoint, err == nil, time.Since(start))
+	}
+	return err
+}
+
+func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("building request for %s: %w", path, err)

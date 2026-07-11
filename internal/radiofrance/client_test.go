@@ -15,7 +15,7 @@ func TestDoGet_SetsRequiredHeaders(t *testing.T) {
 		w.Write([]byte(`{}`))
 	})
 
-	if err := client.doGet(context.Background(), "anything", &struct{}{}); err != nil {
+	if err := client.doGet(context.Background(), "test-endpoint", "anything", &struct{}{}); err != nil {
 		t.Fatalf("doGet returned error: %v", err)
 	}
 
@@ -35,7 +35,7 @@ func TestDoGet_ErrorStatus(t *testing.T) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	})
 
-	err := client.doGet(context.Background(), "anything", &struct{}{})
+	err := client.doGet(context.Background(), "test-endpoint", "anything", &struct{}{})
 	if err == nil {
 		t.Fatal("expected an error, got nil")
 	}

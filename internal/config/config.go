@@ -18,6 +18,7 @@ type Config struct {
 	// RadioFranceAPIToken is the x-token header value required by the
 	// Radio France mobile API.
 	RadioFranceAPIToken string
+
 }
 
 // Load reads configuration from environment variables, applying defaults

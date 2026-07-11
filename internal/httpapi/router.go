@@ -36,13 +36,23 @@ func NewServer(api API, publicBaseURL string) *Server {
 	}
 }
 
-// Routes returns the app's HTTP handler.
-func (s *Server) Routes() http.Handler {
+// Instrumenter wraps a handler with metrics/logging under a short,
+// low-cardinality route name. Satisfied by *observability.Observability;
+// declared here so this package doesn't need to import it directly.
+type Instrumenter interface {
+	Wrap(route string, h http.HandlerFunc) http.HandlerFunc
+}
+
+// Routes returns the app's HTTP handler, with every route wrapped by instr.
+func (s *Server) Routes(instr Instrumenter) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", adapt(s.handleHome))
-	mux.HandleFunc("GET /robots.txt", adapt(s.handleRobots))
-	mux.HandleFunc("GET /search/", adapt(s.handleSearch))
-	mux.HandleFunc("GET /rss/{showId}", adapt(s.handleRSS))
-	mux.HandleFunc("GET /audio/{manifestationId}", adapt(s.handleAudio))
+	register := func(pattern, route string, h handlerFunc) {
+		mux.HandleFunc(pattern, instr.Wrap(route, adapt(h)))
+	}
+	register("GET /{$}", "home", s.handleHome)
+	register("GET /robots.txt", "robots", s.handleRobots)
+	register("GET /search/", "search", s.handleSearch)
+	register("GET /rss/{showId}", "rss", s.handleRSS)
+	register("GET /audio/{manifestationId}", "audio", s.handleAudio)
 	return mux
 }

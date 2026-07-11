@@ -8,7 +8,7 @@ import (
 // GetManifestationURL resolves a manifestation's real audio URL.
 func (c *Client) GetManifestationURL(ctx context.Context, manifestationID string) (string, error) {
 	var resp manifestationResponse
-	if err := c.doGet(ctx, fmt.Sprintf("manifestations/%s", manifestationID), &resp); err != nil {
+	if err := c.doGet(ctx, "manifestation", fmt.Sprintf("manifestations/%s", manifestationID), &resp); err != nil {
 		return "", err
 	}
 	if resp.Data.Manifestations.URL == "" {
