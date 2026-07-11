@@ -23,12 +23,13 @@ type rss struct {
 }
 
 type channel struct {
-	Title       string       `xml:"title"`
-	Link        string       `xml:"link"`
-	NextLink    *atomLink    `xml:"atom:link,omitempty"`
-	Description string       `xml:"description"`
-	Image       *itunesImage `xml:"itunes:image,omitempty"`
-	Items       []item       `xml:"item"`
+	Title       string          `xml:"title"`
+	Link        string          `xml:"link"`
+	NextLink    *atomLink       `xml:"atom:link,omitempty"`
+	Description string          `xml:"description"`
+	Image       *itunesImage    `xml:"itunes:image,omitempty"`
+	Category    *itunesCategory `xml:"itunes:category,omitempty"`
+	Items       []item          `xml:"item"`
 }
 
 type item struct {
@@ -39,6 +40,9 @@ type item struct {
 	Enclosure   enclosure    `xml:"enclosure"`
 	PubDate     string       `xml:"pubDate"`
 	Image       *itunesImage `xml:"itunes:image,omitempty"`
+	// Duration is HH:MM:SS, omitted entirely when unknown (a cache miss
+	// that failed, or caching disabled) rather than emitted as "00:00:00".
+	Duration string `xml:"itunes:duration,omitempty"`
 }
 
 type atomLink struct {
@@ -48,6 +52,14 @@ type atomLink struct {
 
 type itunesImage struct {
 	Href string `xml:"href,attr"`
+}
+
+// itunesCategory renders as <itunes:category text="..."> with an optional
+// nested subcategory of the same shape - the standard iTunes convention
+// for category/subcategory.
+type itunesCategory struct {
+	Text        string          `xml:"text,attr"`
+	Subcategory *itunesCategory `xml:"itunes:category,omitempty"`
 }
 
 type enclosure struct {

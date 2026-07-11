@@ -16,13 +16,13 @@ type noopInstrumenter struct{}
 
 func (noopInstrumenter) Wrap(route string, h http.HandlerFunc) http.HandlerFunc { return h }
 
-func newTestServer(t *testing.T, api API) http.Handler {
+func newTestServer(t *testing.T, api API, audioResolver AudioResolver) http.Handler {
 	t.Helper()
-	return NewServer(api, "https://radio-france-rss.example.com").Routes(noopInstrumenter{})
+	return NewServer(api, "https://radio-france-rss.example.com", nil, audioResolver).Routes(noopInstrumenter{})
 }
 
 func TestHandleRequest_UnknownRoute404(t *testing.T) {
-	h := newTestServer(t, &fakeAPI{})
+	h := newTestServer(t, &fakeAPI{}, &fakeAudioResolver{})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/unknown", nil))
 
@@ -32,7 +32,7 @@ func TestHandleRequest_UnknownRoute404(t *testing.T) {
 }
 
 func TestHandleRequest_Robots(t *testing.T) {
-	h := newTestServer(t, &fakeAPI{})
+	h := newTestServer(t, &fakeAPI{}, &fakeAudioResolver{})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/robots.txt", nil))
 
@@ -49,7 +49,7 @@ func TestHandleRequest_Robots(t *testing.T) {
 }
 
 func TestHandleRequest_Homepage(t *testing.T) {
-	h := newTestServer(t, &fakeAPI{})
+	h := newTestServer(t, &fakeAPI{}, &fakeAudioResolver{})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
@@ -73,7 +73,7 @@ func TestHandleRequest_RSSFeed(t *testing.T) {
 		Diffusions:  []radiofrance.Diffusion{d},
 		ShowDetails: show,
 	}}
-	h := newTestServer(t, api)
+	h := newTestServer(t, api, &fakeAudioResolver{})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
 
@@ -91,7 +91,7 @@ func TestHandleRequest_RSSFeed(t *testing.T) {
 
 func TestHandleRequest_RSSFeed_UpstreamError(t *testing.T) {
 	api := &fakeAPI{showDiffusionsErr: errors.New("upstream boom")}
-	h := newTestServer(t, api)
+	h := newTestServer(t, api, &fakeAudioResolver{})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
 
@@ -104,7 +104,7 @@ func TestHandleRequest_Search(t *testing.T) {
 	api := &fakeAPI{searchResults: []radiofrance.SearchResult{
 		{ShowID: "0b91efaf", Title: "Affaires sensibles", Path: "https://radiofrance.fr/affaires-sensibles"},
 	}}
-	h := newTestServer(t, api)
+	h := newTestServer(t, api, &fakeAudioResolver{})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/search/?query=affaires+sensibles", nil))
 
@@ -121,7 +121,7 @@ func TestHandleRequest_Search(t *testing.T) {
 }
 
 func TestHandleRequest_Search_MissingQuery(t *testing.T) {
-	h := newTestServer(t, &fakeAPI{})
+	h := newTestServer(t, &fakeAPI{}, &fakeAudioResolver{})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/search/", nil))
 
@@ -131,8 +131,8 @@ func TestHandleRequest_Search_MissingQuery(t *testing.T) {
 }
 
 func TestHandleRequest_Audio(t *testing.T) {
-	api := &fakeAPI{manifestationURL: "https://cdn.example.com/audio.mp3"}
-	h := newTestServer(t, api)
+	resolver := &fakeAudioResolver{url: "https://cdn.example.com/audio.mp3", showID: "0b91efaf", showTitle: "Affaires sensibles"}
+	h := newTestServer(t, &fakeAPI{}, resolver)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/audio/301c6eb1-61d4-4120-8cd7-e415ffc4f7df", nil))
 
@@ -145,8 +145,8 @@ func TestHandleRequest_Audio(t *testing.T) {
 }
 
 func TestHandleRequest_Audio_UpstreamError(t *testing.T) {
-	api := &fakeAPI{manifestationErr: errors.New("not found upstream")}
-	h := newTestServer(t, api)
+	resolver := &fakeAudioResolver{err: errors.New("not found upstream")}
+	h := newTestServer(t, &fakeAPI{}, resolver)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/audio/nonexistent-id", nil))
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/analytics"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/config"
+	"github.com/Aerion/rss-radio-france-pour-tous/internal/episodecache"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/httpapi"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/observability"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
@@ -71,7 +72,9 @@ func run() error {
 
 	client := radiofrance.NewClient(http.DefaultClient, cfg.RadioFranceAPIToken, obs)
 
-	server := httpapi.NewServer(client, cfg.PublicBaseURL)
+	episodeCache := episodecache.NewResolver(episodecache.NewStore(pool), client)
+
+	server := httpapi.NewServer(client, cfg.PublicBaseURL, episodeCache, episodeCache)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", server.Routes(obs, analyticsWriter))

@@ -2,13 +2,17 @@
 package feed
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
 )
@@ -20,20 +24,43 @@ import (
 // for every existing subscriber, so it must never move.
 var guidCutoff = time.Date(2022, 9, 12, 0, 0, 0, 0, time.UTC)
 
+// resolveConcurrency bounds how many manifestations are resolved (cache
+// lookup, or API fetch on a cache miss) at once while building a feed page
+// - without this, a cold cache on a ~100-episode page would fire 100
+// concurrent Radio France requests.
+const resolveConcurrency = 8
+
+// ManifestationResolver looks up the manifestation ID and duration to use
+// for a diffusion's enclosure/itunes:duration - typically backed by
+// internal/episodecache, consulting a cache before the Radio France API.
+// Declared here rather than importing episodecache directly so this
+// package doesn't need to know about caching/storage at all.
+type ManifestationResolver interface {
+	Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion) (manifestationID string, duration time.Duration)
+}
+
 // Builder builds RSS feeds for shows.
 type Builder struct {
 	// PublicBaseURL is this app's own externally-visible base URL, used to
 	// build enclosure URLs that point back at our /audio/ redirect route.
 	PublicBaseURL string
+
+	// Resolver is nil-able. When nil, Build falls back to using each
+	// diffusion's raw ManifestationID with no duration - the pre-Phase-4
+	// behavior - which keeps existing tests simple and gives every caller
+	// an escape hatch if caching is unavailable.
+	Resolver ManifestationResolver
 }
 
 // Build renders an RSS 2.0 feed for a show's diffusions. nextPageURL, if
 // non-empty, is advertised as an atom:link rel="next" for feed readers that
 // support paginated feeds (RFC 5005).
-func (b Builder) Build(diffusions []radiofrance.Diffusion, show radiofrance.Show, nextPageURL string) (string, error) {
+func (b Builder) Build(ctx context.Context, diffusions []radiofrance.Diffusion, show radiofrance.Show, nextPageURL string) (string, error) {
+	resolved := b.resolveAll(ctx, show.ID, show.Title, diffusions)
+
 	items := make([]item, 0, len(diffusions))
 	for _, d := range diffusions {
-		it, ok := b.buildItem(d)
+		it, ok := b.buildItem(d, resolved[d.ID])
 		if !ok {
 			continue
 		}
@@ -51,6 +78,13 @@ func (b Builder) Build(diffusions []radiofrance.Diffusion, show radiofrance.Show
 	}
 	if nextPageURL != "" {
 		ch.NextLink = &atomLink{Href: nextPageURL, Rel: "next"}
+	}
+	if show.Extra.ItunesCat != "" {
+		cat := &itunesCategory{Text: show.Extra.ItunesCat}
+		if show.Extra.ItunesSubCat != "" {
+			cat.Subcategory = &itunesCategory{Text: show.Extra.ItunesSubCat}
+		}
+		ch.Category = cat
 	}
 
 	doc := rss{
@@ -70,8 +104,44 @@ func (b Builder) Build(diffusions []radiofrance.Diffusion, show radiofrance.Show
 	return xml.Header + string(body), nil
 }
 
-func (b Builder) buildItem(d radiofrance.Diffusion) (item, bool) {
-	manifestationID := d.ManifestationID()
+// resolution is what resolveAll produces per diffusion.
+type resolution struct {
+	manifestationID string
+	duration        time.Duration
+}
+
+// resolveAll resolves every diffusion's manifestation ID/duration
+// concurrently (bounded by resolveConcurrency), keyed by diffusion ID. With
+// no Resolver configured, this is just each diffusion's raw
+// ManifestationID with no upstream calls at all.
+func (b Builder) resolveAll(ctx context.Context, showID, showTitle string, diffusions []radiofrance.Diffusion) map[string]resolution {
+	results := make(map[string]resolution, len(diffusions))
+
+	if b.Resolver == nil {
+		for _, d := range diffusions {
+			results[d.ID] = resolution{manifestationID: d.ManifestationID()}
+		}
+		return results
+	}
+
+	var mu sync.Mutex
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(resolveConcurrency)
+	for _, d := range diffusions {
+		g.Go(func() error {
+			manifestationID, duration := b.Resolver.Resolve(gctx, showID, showTitle, d)
+			mu.Lock()
+			results[d.ID] = resolution{manifestationID: manifestationID, duration: duration}
+			mu.Unlock()
+			return nil
+		})
+	}
+	_ = g.Wait() // Resolve degrades gracefully on error rather than failing; nothing to propagate here.
+	return results
+}
+
+func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool) {
+	manifestationID := res.manifestationID
 	if manifestationID == "" {
 		slog.Info("diffusion has no audio manifestation, skipping", "diffusionID", d.ID, "path", d.Path)
 		return item{}, false
@@ -93,10 +163,23 @@ func (b Builder) buildItem(d radiofrance.Diffusion) (item, bool) {
 		},
 		PubDate: time.Unix(d.CreatedTime, 0).UTC().Format(http.TimeFormat),
 	}
+	if res.duration > 0 {
+		it.Duration = formatItunesDuration(res.duration)
+	}
 	if imgURL := radiofrance.ImageURL(d.Visuals, d.MainImage); imgURL != "" {
 		it.Image = &itunesImage{Href: imgURL}
 	}
 	return it, true
+}
+
+// formatItunesDuration renders d as HH:MM:SS, the conventional
+// itunes:duration format.
+func formatItunesDuration(d time.Duration) string {
+	total := int(d.Seconds())
+	hours := total / 3600
+	minutes := (total % 3600) / 60
+	seconds := total % 60
+	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds)
 }
 
 // guid returns the RSS guid for a diffusion, preserving the pre-2022

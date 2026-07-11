@@ -79,7 +79,7 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		nextPageURL = fmt.Sprintf("%s%s?page=%d", s.publicBaseURL, r.URL.Path, *showDiffusions.NextPageIdx)
 	}
 
-	body, err := s.feedBuilder.Build(showDiffusions.Diffusions, showDiffusions.ShowDetails, nextPageURL)
+	body, err := s.feedBuilder.Build(r.Context(), showDiffusions.Diffusions, showDiffusions.ShowDetails, nextPageURL)
 	if err != nil {
 		return err
 	}
@@ -92,9 +92,15 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) handleAudio(w http.ResponseWriter, r *http.Request) error {
 	manifestationID := r.PathValue("manifestationId")
 
-	mp3URL, err := s.api.GetManifestationURL(r.Context(), manifestationID)
+	mp3URL, showID, showTitle, err := s.audioResolver.ResolveAudioURL(r.Context(), manifestationID)
 	if err != nil {
 		return err
+	}
+	if showID != "" {
+		// Backfills the show_id Phase 3 otherwise leaves NULL on /audio/
+		// analytics rows - populated once the corresponding show's feed has
+		// been built at least once (see episodecache.Resolver.Resolve).
+		analytics.WithShow(r.Context(), showID, showTitle)
 	}
 
 	http.Redirect(w, r, mp3URL, http.StatusFound)

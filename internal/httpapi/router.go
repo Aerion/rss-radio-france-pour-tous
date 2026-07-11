@@ -14,24 +14,33 @@ import (
 // they can be tested with a fake implementation.
 type API interface {
 	GetShowDiffusions(ctx context.Context, showID string, page int) (radiofrance.ShowDiffusions, error)
-	GetManifestationURL(ctx context.Context, manifestationID string) (string, error)
 	Search(ctx context.Context, query string) ([]radiofrance.SearchResult, error)
+}
+
+// AudioResolver resolves a manifestation ID to its playable URL (and,
+// where known, which show it belongs to) for the /audio/ redirect -
+// typically backed by internal/episodecache, which consults a cache
+// before the Radio France API.
+type AudioResolver interface {
+	ResolveAudioURL(ctx context.Context, manifestationID string) (url, showID, showTitle string, err error)
 }
 
 // Server holds the dependencies shared by all HTTP handlers.
 type Server struct {
 	api           API
 	feedBuilder   feed.Builder
+	audioResolver AudioResolver
 	publicBaseURL string
 }
 
 // NewServer builds a Server. publicBaseURL is this app's own externally
 // visible base URL (e.g. "https://rss.example.com"), used to build
 // self-referencing links in the feed and search results.
-func NewServer(api API, publicBaseURL string) *Server {
+func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, audioResolver AudioResolver) *Server {
 	return &Server{
 		api:           api,
-		feedBuilder:   feed.Builder{PublicBaseURL: publicBaseURL},
+		feedBuilder:   feed.Builder{PublicBaseURL: publicBaseURL, Resolver: manifestationResolver},
+		audioResolver: audioResolver,
 		publicBaseURL: publicBaseURL,
 	}
 }
