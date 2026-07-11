@@ -1,0 +1,43 @@
+{
+    "data": {
+        "shows": {
+            "title": "\"L'Amie prodigieuse\" d'Elena Ferrante (Tomes 1 & 2)",
+            "path": "https://www.radiofrance.fr/franceculture/podcasts/selection-l-amie-prodigieuse-d-elena-ferrante-tomes-1-2",
+            "shortTitle": "amie prodigieuse",
+            "standfirst": "L’auteure nous propulse dans l'Italie d'après-guerre dans un quartier populaire de Naples. Après des années de fascisme, la ville prend sa revanche. Elle grouille, elle éructe et ne semble jamais pouvoir s'endormir. L'Amie prodigieuse raconte l'histoire parallèle d'Elena et Lila.",
+            "mainImage": "4ecc2dde-7265-4db4-a90d-ac8267144998",
+            "stationId": "5",
+            "isPublished": true,
+            "mainResource": {},
+            "createdTime": 1648486413,
+            "manuallyUpdatedTime": 1648486413,
+            "updatedTime": 1652187396,
+            "sitemap": false,
+            "isListed": true,
+            "kind": "selection",
+            "type": "selection",
+            "hasSerie": false,
+            "diffusionsSortBy": "relationships.meta.episodeOrder",
+            "visuals": [
+                {
+                    "name": "square_banner",
+                    "visual_uuid": "7dd37938-8555-4ddb-b309-3da80f0affba"
+                }
+            ],
+            "relationships": {
+                "show": [
+                    "3c1c2e55-41a0-11e5-9fe0-005056a87c89"
+                ],
+                "station": [
+                    "5"
+                ],
+                "tags": [
+                    "191247c0-f18f-45d9-8e5e-34a2422607ac",
+                    "90705624-a488-4d4e-82ee-26aa0fb4b5e7",
+                    "99ef4a68-7930-11e4-aacc-782bcb73ed47"
+                ]
+            },
+            "id": "70b2e0a9-4722-4291-932e-555eff12239e"
+        }
+    }
+}
