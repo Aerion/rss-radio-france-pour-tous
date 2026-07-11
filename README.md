@@ -14,7 +14,7 @@ Le site [https://radio-france-rss.aerion.workers.dev/](https://radio-france-rss.
 
 Ce flux RSS peut ensuite être ajouté à votre application de podcasts (e.g. [AntennaPod](https://antennapod.org/)) et enlever la dépendance à l'application Radio France.
 
-Techniquement, un script Cloudflare Worker est invoqué pour utiliser les mêmes APIs que l'application Radio France.
+Techniquement, un service Go (conteneurisé, voir `docker-compose.yml`) est invoqué pour utiliser les mêmes APIs que l'application Radio France.
 
 ### Demo
 

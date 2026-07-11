@@ -1,2 +1,5 @@
-node_modules/
-.wrangler/
+# Go
+/bin/
+*.env
+.env
+!.env.example
