@@ -1,0 +1,12 @@
+services:
+  app:
+    build: .
+    ports:
+      # Bound to localhost only: this compose file targets local
+      # development for now, public exposure is a separate future phase.
+      - "127.0.0.1:8080:8080"
+    environment:
+      PORT: "8080"
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      RADIOFRANCE_API_TOKEN: ${RADIOFRANCE_API_TOKEN:?RADIOFRANCE_API_TOKEN must be set, see .env.example}
+    restart: unless-stopped
