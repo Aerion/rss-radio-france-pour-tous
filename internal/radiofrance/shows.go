@@ -33,6 +33,13 @@ func (c *Client) GetShowDiffusions(ctx context.Context, showID string, page int)
 		diffusions = append(diffusions, item.Diffusions)
 	}
 
+	manifestations := make(map[string]ManifestationDetails, len(resp.Included.Manifestations))
+	for id, raw := range resp.Included.Manifestations {
+		if details := raw.toDetails(); details.URL != "" {
+			manifestations[id] = details
+		}
+	}
+
 	var nextPageIdx *int
 	if resp.Links.Next != "" {
 		next := page + 1
@@ -40,15 +47,20 @@ func (c *Client) GetShowDiffusions(ctx context.Context, showID string, page int)
 	}
 
 	return ShowDiffusions{
-		Diffusions:  diffusions,
-		ShowDetails: showDetails,
-		NextPageIdx: nextPageIdx,
+		Diffusions:     diffusions,
+		ShowDetails:    showDetails,
+		Manifestations: manifestations,
+		NextPageIdx:    nextPageIdx,
 	}, nil
 }
 
 func (c *Client) getDiffusionsPage(ctx context.Context, showID string, page int) (diffusionsResponse, error) {
+	// include=manifestations pulls manifestation details inline (see
+	// diffusionsResponse.Included.Manifestations), letting most episodes on
+	// a page resolve their audio/duration without a separate per-episode
+	// call - coverage isn't exhaustive, so callers still need a fallback.
 	path := fmt.Sprintf(
-		"shows/%s/diffusions?filter[manifestations][exists]=true&include=show&page[offset]=%d",
+		"shows/%s/diffusions?filter[manifestations][exists]=true&include=show&include=manifestations&page[offset]=%d",
 		showID, page,
 	)
 	var resp diffusionsResponse

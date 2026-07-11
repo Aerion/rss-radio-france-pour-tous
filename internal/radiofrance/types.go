@@ -92,19 +92,16 @@ type Diffusion struct {
 }
 
 // ManifestationID returns the ID of this diffusion's audio manifestation to
-// link in the feed, or "" if it has none (some diffusions have no mp3
-// version).
-//
-// This picks Relationships.Manifestations[0] rather than the manifestation
-// actually flagged Principal by the API, because telling them apart
-// requires fetching every sibling manifestation - which would reintroduce
-// the N-calls-per-episode problem the lazy /audio/ redirect was
-// specifically built to avoid (see commit bf98093). In samples checked,
-// array position 0 was never the principal one, so this is a known
-// imprecision, not a considered choice of "the best" variant - just "a"
-// working one. Phase 4's planned episode cache (which will fetch every
-// manifestation anyway) is the natural place to select Principal properly
-// and cache the result, without adding calls to the hot path.
+// link in the feed by default, or "" if it has none (some diffusions have
+// no mp3 version). This is array position 0 of Relationships.Manifestations,
+// not necessarily the manifestation flagged Principal by the API (see
+// rawManifestation.Principal). internal/episodecache.Resolver is what
+// actually picks the principal one when possible, falling back to this
+// only as a last resort; see its doc comment for why principal selection
+// matters (non-principal manifestations usually carry an expiration date;
+// this one is chosen not to, per samples, but that's a byproduct of it
+// being array position 0 in an effectively arbitrary order, not a
+// guarantee).
 func (d Diffusion) ManifestationID() string {
 	if len(d.Relationships.Manifestations) == 0 {
 		return ""
@@ -127,6 +124,13 @@ type diffusionsResponse struct {
 		// Shows is keyed by show ID - see package doc for the
 		// selection/serie case where that's not the ID you requested.
 		Shows map[string]Show `json:"shows"`
+		// Manifestations is keyed by manifestation ID, populated when the
+		// request includes include=manifestations. Coverage is NOT
+		// exhaustive - live samples showed anywhere from ~65% to ~99% of a
+		// page's referenced manifestation IDs actually present here,
+		// varying by show - so callers must still be able to fall back to
+		// a per-ID GetManifestation call for whatever's missing.
+		Manifestations map[string]rawManifestation `json:"manifestations"`
 	} `json:"included"`
 }
 
@@ -140,31 +144,65 @@ type showResponse struct {
 // manifestationResponse is the raw shape of GET manifestations/{id}.
 type manifestationResponse struct {
 	Data struct {
-		Manifestations struct {
-			// URL is the playable/downloadable audio file URL. Two
-			// distinct CDN hosts are used across a diffusion's sibling
-			// manifestations: media.radiofrance-podcast.net (streaming)
-			// and proxycast.radiofrance.fr (download) - not otherwise
-			// distinguished by this client.
-			URL string `json:"url"`
-			// Duration in seconds. This is the field the pre-rewrite feed
-			// was missing itunes:duration from - it only lives here, not
-			// on the diffusion.
-			Duration int `json:"duration"`
-			// Principal is true for exactly one of a diffusion's ~8
-			// sibling manifestations. See ManifestationID's doc comment:
-			// this client fetches only one manifestation per diffusion
-			// (not all siblings), so Principal here just reports whether
-			// the one we happened to fetch is the designated one - it does
-			// not mean we searched for and selected the principal variant.
-			Principal bool `json:"principal"`
-			// DownloadExpirationDate/StreamExpirationDate (Unix seconds,
-			// absent if not applicable) - the URL above can stop working
-			// after this date. See ManifestationDetails.ExpiresAt.
-			DownloadExpirationDate *int64 `json:"downloadExpirationDate"`
-			StreamExpirationDate   *int64 `json:"streamExpirationDate"`
-		} `json:"manifestations"`
+		Manifestations rawManifestation `json:"manifestations"`
 	} `json:"data"`
+}
+
+// rawManifestation is a manifestation object's raw JSON shape, as returned
+// both standalone (GET manifestations/{id}) and inline via
+// included.manifestations on a diffusions/shows call requesting
+// include=manifestations.
+type rawManifestation struct {
+	// URL is the playable/downloadable audio file URL. Two distinct CDN
+	// hosts are used across a diffusion's sibling manifestations:
+	// media.radiofrance-podcast.net (streaming) and proxycast.radiofrance.fr
+	// (download).
+	URL string `json:"url"`
+	// Duration in seconds. This is the field the pre-rewrite feed was
+	// missing itunes:duration from - it only lives here, not on the
+	// diffusion. Usually (93-100% of samples) identical across a
+	// diffusion's sibling manifestations, but can differ by ~1 second
+	// (separate encodes), so it's tied to whichever manifestation was
+	// actually selected, not diffusion-wide.
+	Duration int `json:"duration"`
+	// Principal is true for exactly one of a diffusion's ~8 sibling
+	// manifestations. Live samples show it's reliably the
+	// media.radiofrance-podcast.net (streaming) one, and reliably the one
+	// variant with no expiration date - see ExpiresAt.
+	Principal bool `json:"principal"`
+	// DownloadExpirationDate/StreamExpirationDate (Unix seconds, absent if
+	// not applicable) - the URL above can stop working after this date.
+	// Live samples: the Principal manifestation never has either date set;
+	// non-principal download-host manifestations carry
+	// DownloadExpirationDate ~97% of the time. This is *why* principal
+	// selection matters in practice, not just in theory - picking a
+	// non-principal manifestation has a high chance of embedding a link
+	// that goes dead after a finite date.
+	DownloadExpirationDate *int64 `json:"downloadExpirationDate"`
+	StreamExpirationDate   *int64 `json:"streamExpirationDate"`
+}
+
+// toDetails converts m to the exported ManifestationDetails shape, or the
+// zero value if m has no URL (e.g. a zero-value rawManifestation from a
+// missing/empty response).
+func (m rawManifestation) toDetails() ManifestationDetails {
+	if m.URL == "" {
+		return ManifestationDetails{}
+	}
+	details := ManifestationDetails{
+		URL:       m.URL,
+		Duration:  time.Duration(m.Duration) * time.Second,
+		Principal: m.Principal,
+	}
+	switch {
+	case m.DownloadExpirationDate != nil:
+		t := time.Unix(*m.DownloadExpirationDate, 0)
+		details.ExpiresAt = &t
+	case m.StreamExpirationDate != nil:
+		t := time.Unix(*m.StreamExpirationDate, 0)
+		details.ExpiresAt = &t
+	}
+	return details
 }
 
 // ManifestationDetails is a manifestation's playback-relevant fields.
@@ -211,6 +249,13 @@ type SearchResult struct {
 type ShowDiffusions struct {
 	Diffusions  []Diffusion
 	ShowDetails Show
+	// Manifestations holds whatever manifestation details came back inline
+	// with this page (see diffusionsResponse.Included.Manifestations) -
+	// not exhaustive, keyed by manifestation ID. A given diffusion's
+	// manifestations may be partially or entirely missing here; callers
+	// needing a specific one not present should fall back to
+	// Client.GetManifestation.
+	Manifestations map[string]ManifestationDetails
 	// NextPageIdx is the page index to fetch next, or nil if there is no
 	// further page.
 	NextPageIdx *int

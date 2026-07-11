@@ -26,6 +26,56 @@ func TestGetShowDiffusions_ShowDetailsFromIncluded(t *testing.T) {
 	}
 }
 
+func TestGetShowDiffusions_PopulatesManifestationsFromIncluded(t *testing.T) {
+	client := newTestClient(t, serveFixture(t, "api-show-0b91efaf.json"))
+
+	got, err := client.GetShowDiffusions(context.Background(), "0b91efaf-26e6-11e4-907f-782bcb6744eb", 0)
+	if err != nil {
+		t.Fatalf("GetShowDiffusions: %v", err)
+	}
+
+	if len(got.Manifestations) == 0 {
+		t.Fatal("expected at least one manifestation from included.manifestations")
+	}
+
+	// Cross-check: every diffusion's ManifestationID(), if present in the
+	// included map, should have a usable URL and a real Duration.
+	foundPrincipal := false
+	for _, d := range got.Diffusions {
+		for _, id := range d.Relationships.Manifestations {
+			m, ok := got.Manifestations[id]
+			if !ok {
+				continue
+			}
+			if m.URL == "" {
+				t.Errorf("manifestation %s has an empty URL", id)
+			}
+			if m.Principal {
+				foundPrincipal = true
+			}
+		}
+	}
+	if !foundPrincipal {
+		t.Error("expected at least one included manifestation flagged Principal across the page")
+	}
+}
+
+func TestGetShowDiffusions_RequestsManifestationsInline(t *testing.T) {
+	var gotQuery string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Write(readTestdata(t, "api-show-0b91efaf.json"))
+	})
+
+	_, err := client.GetShowDiffusions(context.Background(), "0b91efaf-26e6-11e4-907f-782bcb6744eb", 0)
+	if err != nil {
+		t.Fatalf("GetShowDiffusions: %v", err)
+	}
+	if !strings.Contains(gotQuery, "include=manifestations") {
+		t.Errorf("query = %q, want it to contain include=manifestations", gotQuery)
+	}
+}
+
 func TestGetShowDiffusions_NoNextPage(t *testing.T) {
 	client := newTestClient(t, serveFixture(t, "api-show-4a41823f.json"))
 
