@@ -1,109 +1,522 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>RSS Radio France pour tous</title>
-    <link rel="stylesheet" href="https://unpkg.com/mvp.css" />
+    <style>
+      :root {
+        --page-bg: #1b1a2e;
+        --hero-bg: #121123;
+        --hero-fg: #ece9f5;
+        --card-bg: #232241;
+        --ink: #ece9f5;
+        --muted: #9a96b0;
+        --border: #2c2b47;
+        --signal: #2f9e9e;
+        --dial: #caa23a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+          Arial, sans-serif;
+        background: var(--page-bg);
+        color: var(--ink);
+      }
+      .display {
+        font-family: Rockwell, "Roboto Slab", Georgia, "Times New Roman",
+          serif;
+        font-weight: 700;
+      }
+      .mono {
+        font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+      }
+
+      /* ---------- hero / tuner band ---------- */
+      .hero {
+        position: relative;
+        background: var(--hero-bg);
+        color: var(--hero-fg);
+        overflow: hidden;
+        padding: 40px 24px 64px;
+      }
+      .hero-inner {
+        max-width: 760px;
+        margin: 0 auto;
+        position: relative;
+        z-index: 1;
+      }
+      .signal-watermark {
+        position: absolute;
+        top: -60px;
+        right: -40px;
+        width: 320px;
+        height: 320px;
+        color: var(--signal);
+        opacity: 0.14;
+        pointer-events: none;
+      }
+      .hero h1 {
+        font-size: 30px;
+        letter-spacing: 0.01em;
+        margin: 0 0 10px;
+      }
+      .hero .tagline {
+        margin: 0 0 36px;
+        color: var(--hero-fg);
+        opacity: 0.7;
+        font-size: 15px;
+      }
+      form {
+        margin: 0;
+      }
+      form label {
+        display: block;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--hero-fg);
+        opacity: 0.7;
+        margin-bottom: 10px;
+      }
+      .search-row {
+        display: flex;
+        gap: 10px;
+      }
+      .search-box {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--card-bg);
+        border-radius: 8px;
+        padding: 0 14px;
+      }
+      .search-box .signal-icon {
+        color: var(--signal);
+        flex-shrink: 0;
+        display: flex;
+      }
+      .search-box .signal-icon.pulsing {
+        animation: pulse 1.1s ease-in-out infinite;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .search-box .signal-icon.pulsing {
+          animation: none;
+        }
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.55;
+          transform: scale(0.94);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1.05);
+        }
+      }
+      .search-box input {
+        flex: 1;
+        border: none;
+        outline: none;
+        background: transparent;
+        font-size: 15px;
+        padding: 13px 0;
+        color: var(--ink);
+      }
+      .search-row button {
+        border: none;
+        border-radius: 8px;
+        background: var(--signal);
+        color: #0c1f1f;
+        padding: 0 22px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .search-row button:hover {
+        filter: brightness(1.08);
+      }
+      .search-row button:disabled {
+        opacity: 0.7;
+        cursor: default;
+      }
+      :focus-visible {
+        outline: 2px solid var(--signal);
+        outline-offset: 2px;
+      }
+
+      /* ---------- results ---------- */
+      main.results-main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 32px 24px 90px;
+      }
+      .meta-row {
+        font-size: 11.5px;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        margin-bottom: 20px;
+        min-height: 16px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: 22px;
+      }
+      .card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
+      }
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .card {
+          transition: none;
+        }
+        .card:hover {
+          transform: none;
+        }
+      }
+      .card img,
+      .card .no-img {
+        aspect-ratio: 1/1;
+        width: 100%;
+        object-fit: cover;
+        display: block;
+        background: var(--border);
+      }
+      .card .content {
+        padding: 14px 16px 18px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .card h3 {
+        font-size: 15px;
+        line-height: 1.3;
+        margin: 0 0 6px;
+        color: var(--ink);
+      }
+      .card .standfirst-wrap {
+        position: relative;
+        margin: 0 0 14px;
+        flex: 1;
+      }
+      .card small {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        font-size: 12.5px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .card .standfirst-wrap::after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 18px;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0), var(--card-bg));
+      }
+
+      /* actions: centered button, secondary links centered below */
+      .card .actions {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        text-align: center;
+        padding-top: 4px;
+      }
+      .copy-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        white-space: nowrap;
+        border: none;
+        border-radius: 6px;
+        background: var(--signal);
+        color: #0c1f1f;
+        font-size: 12.5px;
+        font-weight: 700;
+        padding: 8px 14px;
+        cursor: pointer;
+        width: 100%;
+      }
+      .copy-btn:hover {
+        filter: brightness(1.08);
+      }
+      .copy-btn.copied {
+        background: var(--dial);
+      }
+      .secondary-links {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .secondary-links a {
+        color: var(--dial);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .secondary-links a:hover {
+        text-decoration: underline;
+      }
+      .secondary-links .sep {
+        color: var(--muted);
+      }
+
+      .empty-state,
+      .error-state {
+        text-align: center;
+        font-weight: 600;
+        padding: 48px 20px;
+        color: var(--ink);
+      }
+      .empty-state .signal-icon,
+      .error-state .signal-icon {
+        color: var(--muted);
+        margin-bottom: 14px;
+      }
+
+      footer {
+        text-align: center;
+        padding: 0 24px 60px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      footer a {
+        color: var(--muted);
+      }
+    </style>
   </head>
   <body>
-    <header>
-      <h1>RSS Radio France pour tous</h1>
-      <p>Le site pour rétablir les flux RSS de Radio France</p>
-    </header>
-    <main style="padding-top: 0px;">
-      <section>
+    <div class="hero">
+      <svg
+        class="signal-watermark"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1"
+        stroke-linecap="round"
+        aria-hidden="true"
+      >
+        <circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none" />
+        <path d="M4 11a9 9 0 0 1 9 9" />
+        <path d="M4 4a16 16 0 0 1 16 16" />
+      </svg>
+      <div class="hero-inner">
+        <h1 class="display">RSS Radio France pour tous</h1>
+        <p class="tagline">Le site pour rétablir les flux RSS de Radio France</p>
         <form>
           <label for="query">Titre de l'émission</label>
-            <input
-              type="search"
-              name="query"
-              id="query"
-              placeholder="Rechercher un podcast…"
-              required
-            />
-            <button>Rechercher</button>
+          <div class="search-row">
+            <div class="search-box">
+              <span class="signal-icon" id="signal-icon" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none" />
+                  <path d="M4 11a9 9 0 0 1 9 9" />
+                  <path d="M4 4a16 16 0 0 1 16 16" />
+                </svg>
+              </span>
+              <input
+                type="search"
+                name="query"
+                id="query"
+                placeholder="Rechercher un podcast…"
+                required
+              />
+            </div>
+            <button id="search-btn">Rechercher</button>
+          </div>
         </form>
-      </section>
-      <section id="search-results-container"></section>
+      </div>
+    </div>
+
+    <main class="results-main">
+      <div class="meta-row mono" id="result-count" aria-live="polite"></div>
+      <div id="search-results-container" aria-live="polite"></div>
     </main>
+
     <footer>
-      <section>
-        <a href="https://github.com/Aerion/rss-radio-france-pour-tous">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 16 16"
-            width="16"
-            height="16"
-            style="vertical-align: middle; margin-right: 4px"
-          >
-            <path
-              style="fill: var(--color-link)"
-              fill-rule="evenodd"
-              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
-            ></path></svg
-          >Aerion/rss-radio-france-pour-tous</a
+      <a href="https://github.com/Aerion/rss-radio-france-pour-tous">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          style="vertical-align: middle; margin-right: 4px"
         >
-      </section>
+          <path
+            style="fill: var(--muted)"
+            fill-rule="evenodd"
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"
+          ></path></svg
+        >Aerion/rss-radio-france-pour-tous</a
+      >
     </footer>
-  </body>
 
-  <script>
-    const searchResultsContainer = document.querySelector(
-      "#search-results-container"
-    );
-    const setSearchResults = (searchResults) => {
-      if (searchResults.length === 0) {
-        const noResultsNode = document.createElement("p");
-        noResultsNode.innerHTML = "Aucun résultat trouvé pour cette recherche.<br>Êtes-vous sûr que ce podcast existe sur le site de Radio France ?";
-        noResultsNode.style.textAlign = "center";
-        noResultsNode.style.fontWeight = "bold";
-        searchResultsContainer.replaceChildren(noResultsNode);
-      } else {
-        const nodes = searchResults.map((searchResult) => {
-          const node = document.createElement("aside");
-          const imgNodeHTML = searchResult['imgUrl'] ? `<img src="${searchResult['imgUrl']}" />` : '<div style="width: 100%;background: lightgray;aspect-ratio: 1/1;"></div>';
-          node.innerHTML = `
-            ${imgNodeHTML}
-            <h3>${searchResult["title"]}</h3>
-            <small>${searchResult["standfirst"]}</small>
-            <p>
-              <a href="${searchResult['rssUrl']}" target="_blank">Flux RSS</a> - <a href="${searchResult['path']}" target="_blank">Émission</a>
-            </p>
-          `;
-          return node;
-        });
+    <script>
+      const RSS_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="5" cy="19" r="1.7" fill="currentColor" stroke="none"/><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/></svg>`;
 
-        searchResultsContainer.replaceChildren(...nodes);
-      }
-    };
+      const resultsContainer = document.querySelector(
+        "#search-results-container"
+      );
+      const resultCount = document.querySelector("#result-count");
+      const signalIcon = document.querySelector("#signal-icon");
+      const searchBtn = document.querySelector("#search-btn");
+      const form = document.querySelector("form");
+      const queryInput = document.querySelector("input");
 
-    const form = document.querySelector("form");
-    const queryInput = document.querySelector("input");
-    const handleSubmit = async (evt) => {
-      evt.preventDefault();
-
-      const query = queryInput.value;
-      if (query.length === 0) {
-        alert("Un champ de recherche doit être renseigné");
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          "/search/?query=" +
-            encodeURIComponent(query)
-        );
-        if (!response.ok) {
-          throw new Error(`Erreur serveur : ${response.status}`);
+      const setSearchResults = (searchResults) => {
+        if (searchResults.length === 0) {
+          resultCount.textContent = "";
+          resultsContainer.innerHTML = `
+            <div class="empty-state">
+              <div class="signal-icon">${RSS_ICON.replace(
+                'width="16" height="16"',
+                'width="28" height="28"'
+              )}</div>
+              Aucun résultat trouvé pour cette recherche.<br>Êtes-vous sûr que ce podcast existe sur le site de Radio France ?
+            </div>`;
+          return;
         }
-        const searchResults = await response.json();
-        setSearchResults(searchResults);
-      } catch (error) {
-        console.error("Erreur lors de la recherche", error);
-        alert("Une erreur est survenue lors de la recherche. Veuillez réessayer.");
-      }
-    };
-    form.addEventListener("submit", handleSubmit);
-  </script>
+
+        resultCount.textContent = `${searchResults.length} ÉMISSION${
+          searchResults.length > 1 ? "S" : ""
+        } TROUVÉE${searchResults.length > 1 ? "S" : ""}`;
+
+        const grid = document.createElement("div");
+        grid.className = "grid";
+        searchResults.forEach((searchResult) => {
+          const card = document.createElement("div");
+          card.className = "card";
+          const imgHTML = searchResult["imgUrl"]
+            ? `<img src="${searchResult["imgUrl"]}" alt="" loading="lazy" />`
+            : `<div class="no-img"></div>`;
+          // Both actions are real <a href> elements (not just JS buttons) so
+          // a visitor can right-click -> "copy link address" as an
+          // alternative to the clipboard button.
+          const emissionHTML = searchResult["path"]
+            ? `<a href="${searchResult["path"]}" target="_blank" rel="noopener">Émission ↗</a>`
+            : "";
+          const sepHTML = searchResult["path"] ? `<span class="sep">·</span>` : "";
+          card.innerHTML = `
+            ${imgHTML}
+            <div class="content">
+              <h3>${searchResult["title"]}</h3>
+              <div class="standfirst-wrap"><small>${searchResult["standfirst"]}</small></div>
+              <div class="actions">
+                <button class="copy-btn" type="button" data-rss="${searchResult["rssUrl"]}">${RSS_ICON}<span>Copier le flux RSS</span></button>
+                <div class="secondary-links">
+                  <a href="${searchResult["rssUrl"]}" target="_blank" rel="noopener">Flux RSS ↗</a>
+                  ${sepHTML}
+                  ${emissionHTML}
+                </div>
+              </div>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+        resultsContainer.replaceChildren(grid);
+      };
+
+      const setErrorState = () => {
+        resultCount.textContent = "";
+        resultsContainer.innerHTML = `
+          <div class="error-state">
+            Une erreur est survenue lors de la recherche. Veuillez réessayer.
+          </div>`;
+      };
+
+      resultsContainer.addEventListener("click", async (evt) => {
+        const btn = evt.target.closest(".copy-btn");
+        if (!btn) return;
+        const url = btn.dataset.rss;
+        try {
+          await navigator.clipboard.writeText(url);
+        } catch {
+          const ta = document.createElement("textarea");
+          ta.value = url;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+        }
+        const label = btn.querySelector("span");
+        const original = label.textContent;
+        btn.classList.add("copied");
+        label.textContent = "Copié !";
+        setTimeout(() => {
+          btn.classList.remove("copied");
+          label.textContent = original;
+        }, 1500);
+      });
+
+      const handleSubmit = async (evt) => {
+        evt.preventDefault();
+
+        const query = queryInput.value;
+        if (query.length === 0) {
+          alert("Un champ de recherche doit être renseigné");
+          return;
+        }
+
+        signalIcon.classList.add("pulsing");
+        searchBtn.disabled = true;
+        searchBtn.textContent = "Recherche…";
+        resultCount.textContent = "";
+
+        try {
+          const response = await fetch(
+            "/search/?query=" + encodeURIComponent(query)
+          );
+          if (!response.ok) {
+            throw new Error(`Erreur serveur : ${response.status}`);
+          }
+          const searchResults = await response.json();
+          setSearchResults(searchResults);
+        } catch (error) {
+          console.error("Erreur lors de la recherche", error);
+          setErrorState();
+        } finally {
+          signalIcon.classList.remove("pulsing");
+          searchBtn.disabled = false;
+          searchBtn.textContent = "Rechercher";
+        }
+      };
+      form.addEventListener("submit", handleSubmit);
+    </script>
+  </body>
 </html>

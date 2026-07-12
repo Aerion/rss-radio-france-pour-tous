@@ -22,7 +22,7 @@ func (s *Server) handleRobots(w http.ResponseWriter, r *http.Request) error {
 }
 
 // searchResultJSON is the shape expected by the homepage's client-side
-// search UI (internal/httpapi/web/index.html.tmpl).
+// search UI (internal/httpapi/web/index.html).
 type searchResultJSON struct {
 	Title      string `json:"title"`
 	Path       string `json:"path"`
