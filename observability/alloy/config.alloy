@@ -1,0 +1,39 @@
+// Discovers all containers on the host via the Docker socket, rather than
+// the Loki Docker logging-driver plugin - that would need a host-level
+// `docker plugin install` step outside this compose file, which is easy
+// to forget when redeploying to a fresh box. This stays fully declared
+// here, reproducible with just `docker compose up`.
+discovery.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+}
+
+loki.source.docker "containers" {
+  host    = "unix:///var/run/docker.sock"
+  targets = discovery.docker.containers.targets
+  labels  = {"job" = "docker"}
+
+  relabel_rules {
+    rule {
+      source_labels = ["__meta_docker_container_name"]
+      regex         = "/(.*)"
+      target_label  = "container"
+    }
+    rule {
+      source_labels = ["__meta_docker_container_log_stream"]
+      target_label  = "stream"
+    }
+    rule {
+      source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+      target_label  = "service"
+    }
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

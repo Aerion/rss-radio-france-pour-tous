@@ -56,13 +56,17 @@ services:
       - loki_data:/loki
     restart: unless-stopped
 
-  promtail:
-    image: grafana/promtail:3.2.1
-    command: -config.file=/etc/promtail/config.yml
+  alloy:
+    image: grafana/alloy:v1.17.1
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
     volumes:
-      - ./observability/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - alloy_data:/var/lib/alloy/data
     restart: unless-stopped
     depends_on:
       - loki
@@ -87,4 +91,5 @@ volumes:
   prometheus_data:
   loki_data:
   grafana_data:
+  alloy_data:
   pgdata:
