@@ -23,7 +23,7 @@ func newTestServer(t *testing.T, api API, audioResolver AudioResolver) http.Hand
 
 func newTestServerWithBlockedUserAgents(t *testing.T, api API, audioResolver AudioResolver, blocked []string) http.Handler {
 	t.Helper()
-	return NewServer(api, "https://radio-france-rss.example.com", nil, audioResolver, blocked).Routes(noopInstrumenter{})
+	return NewServer(api, "https://radio-france-rss.example.com", nil, nil, audioResolver, blocked).Routes(noopInstrumenter{})
 }
 
 func TestHandleRequest_UnknownRoute404(t *testing.T) {

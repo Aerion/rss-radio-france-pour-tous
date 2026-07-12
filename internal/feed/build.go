@@ -47,6 +47,16 @@ type ManifestationResolver interface {
 	Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID, url string, duration time.Duration)
 }
 
+// ImageResolver picks the cover image URL to use for a diffusion, typically
+// backed by internal/episodecache. Unlike the pure radiofrance.DiffusionImageURL,
+// it can follow a rerun's origin diffusion (an upstream call, cached) to find
+// the real per-episode artwork when the rerun itself carries none - see
+// episodecache.Resolver.ResolveImage. Declared here rather than importing
+// episodecache directly for the same reason as ManifestationResolver.
+type ImageResolver interface {
+	ResolveImage(ctx context.Context, d radiofrance.Diffusion) string
+}
+
 // Builder builds RSS feeds for shows.
 type Builder struct {
 	// PublicBaseURL is this app's own externally-visible base URL, used to
@@ -61,6 +71,11 @@ type Builder struct {
 	// simple and gives every caller an escape hatch if caching is
 	// unavailable.
 	Resolver ManifestationResolver
+
+	// ImageResolver is nil-able. When nil, Build falls back to
+	// radiofrance.DiffusionImageURL(d) directly, with no rerun/origin
+	// handling - same escape hatch rationale as Resolver.
+	ImageResolver ImageResolver
 }
 
 // Build renders an RSS 2.0 feed for one page of a show's diffusions.
@@ -121,18 +136,20 @@ type resolution struct {
 	manifestationID string
 	url             string
 	duration        time.Duration
+	imageURL        string
 }
 
-// resolveAll resolves every diffusion's manifestation ID/URL/duration
-// concurrently (bounded by resolveConcurrency), keyed by diffusion ID. With
-// no Resolver configured, this is just each diffusion's raw
-// ManifestationID with no upstream calls, no URL, at all.
+// resolveAll resolves every diffusion's manifestation ID/URL/duration and
+// cover image concurrently (bounded by resolveConcurrency), keyed by
+// diffusion ID. With no Resolver/ImageResolver configured, the corresponding
+// fields fall back to each diffusion's raw ManifestationID/DiffusionImageURL
+// with no upstream calls.
 func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) map[string]resolution {
 	results := make(map[string]resolution, len(sd.Diffusions))
 
-	if b.Resolver == nil {
+	if b.Resolver == nil && b.ImageResolver == nil {
 		for _, d := range sd.Diffusions {
-			results[d.ID] = resolution{manifestationID: d.ManifestationID()}
+			results[d.ID] = resolution{manifestationID: d.ManifestationID(), imageURL: radiofrance.DiffusionImageURL(d)}
 		}
 		return results
 	}
@@ -142,14 +159,24 @@ func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) 
 	g.SetLimit(resolveConcurrency)
 	for _, d := range sd.Diffusions {
 		g.Go(func() error {
-			manifestationID, url, duration := b.Resolver.Resolve(gctx, sd.ShowDetails.ID, sd.ShowDetails.Title, d, sd.Manifestations)
+			var res resolution
+			if b.Resolver != nil {
+				res.manifestationID, res.url, res.duration = b.Resolver.Resolve(gctx, sd.ShowDetails.ID, sd.ShowDetails.Title, d, sd.Manifestations)
+			} else {
+				res.manifestationID = d.ManifestationID()
+			}
+			if b.ImageResolver != nil {
+				res.imageURL = b.ImageResolver.ResolveImage(gctx, d)
+			} else {
+				res.imageURL = radiofrance.DiffusionImageURL(d)
+			}
 			mu.Lock()
-			results[d.ID] = resolution{manifestationID: manifestationID, url: url, duration: duration}
+			results[d.ID] = res
 			mu.Unlock()
 			return nil
 		})
 	}
-	_ = g.Wait() // Resolve degrades gracefully on error rather than failing; nothing to propagate here.
+	_ = g.Wait() // Resolve/ResolveImage degrade gracefully on error rather than failing; nothing to propagate here.
 	return results
 }
 
@@ -194,8 +221,8 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 	if res.duration > 0 {
 		it.Duration = formatItunesDuration(res.duration)
 	}
-	if imgURL := radiofrance.DiffusionImageURL(d); imgURL != "" {
-		it.Image = &itunesImage{Href: imgURL}
+	if res.imageURL != "" {
+		it.Image = &itunesImage{Href: res.imageURL}
 	}
 	return it, true
 }

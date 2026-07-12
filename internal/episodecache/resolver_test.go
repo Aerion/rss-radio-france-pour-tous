@@ -12,13 +12,16 @@ import (
 // fakeStore is an in-memory store for testing Resolver's logic without a
 // real database.
 type fakeStore struct {
-	entries map[string]Entry
-	gets    int
-	upserts int
+	entries       map[string]Entry
+	gets          int
+	upserts       int
+	originImages  map[string]string
+	originGets    int
+	originUpserts int
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{entries: map[string]Entry{}}
+	return &fakeStore{entries: map[string]Entry{}, originImages: map[string]string{}}
 }
 
 func (s *fakeStore) Get(ctx context.Context, manifestationID string) (Entry, bool, error) {
@@ -36,6 +39,18 @@ func (s *fakeStore) Upsert(ctx context.Context, e Entry) error {
 	return nil
 }
 
+func (s *fakeStore) GetOriginImage(ctx context.Context, diffusionID string) (string, bool, error) {
+	s.originGets++
+	mainImage, ok := s.originImages[diffusionID]
+	return mainImage, ok, nil
+}
+
+func (s *fakeStore) UpsertOriginImage(ctx context.Context, diffusionID, mainImage string) error {
+	s.originUpserts++
+	s.originImages[diffusionID] = mainImage
+	return nil
+}
+
 // fakeFetcher is a test double for fetcher. err applies to every ID unless
 // errByID has a specific entry for it, letting tests simulate "this one
 // sibling fails, the next succeeds".
@@ -45,6 +60,10 @@ type fakeFetcher struct {
 	errByID map[string]error
 	calls   int
 	callIDs []string
+
+	diffusions     map[string]radiofrance.Diffusion
+	diffusionErr   error
+	diffusionCalls int
 }
 
 func (f *fakeFetcher) GetManifestation(ctx context.Context, manifestationID string) (radiofrance.ManifestationDetails, error) {
@@ -59,6 +78,14 @@ func (f *fakeFetcher) GetManifestation(ctx context.Context, manifestationID stri
 		return radiofrance.ManifestationDetails{}, f.err
 	}
 	return f.details[manifestationID], nil
+}
+
+func (f *fakeFetcher) GetDiffusion(ctx context.Context, diffusionID string) (radiofrance.Diffusion, error) {
+	f.diffusionCalls++
+	if f.diffusionErr != nil {
+		return radiofrance.Diffusion{}, f.diffusionErr
+	}
+	return f.diffusions[diffusionID], nil
 }
 
 // fakeCacheObserver records every outcome passed to ObserveCacheLookup, in
@@ -361,5 +388,121 @@ func TestResolveAudioURL_ObservesCacheHitAndMiss(t *testing.T) {
 	want := []string{outcomeHit, outcomeMiss}
 	if len(observer.outcomes) != len(want) || observer.outcomes[0] != want[0] || observer.outcomes[1] != want[1] {
 		t.Errorf("observer.outcomes = %v, want %v", observer.outcomes, want)
+	}
+}
+
+func diffusionWithOrigin(id, originID string, visuals ...radiofrance.Visual) radiofrance.Diffusion {
+	d := radiofrance.Diffusion{ID: id, Visuals: visuals}
+	if originID != "" {
+		d.Relationships.OriginDiffusion = []string{originID}
+	}
+	return d
+}
+
+func TestResolveImage_UsesMainImageDirectlyWhenPresent(t *testing.T) {
+	fetcher := &fakeFetcher{} // should not be called at all
+	r := NewResolver(newFakeStore(), fetcher, nil)
+
+	d := radiofrance.Diffusion{ID: "d1", MainImage: "uuid-episode"}
+	got := r.ResolveImage(context.Background(), d)
+
+	want := radiofrance.DiffusionImageURL(d)
+	if got != want {
+		t.Errorf("ResolveImage = %q, want %q", got, want)
+	}
+	if fetcher.diffusionCalls != 0 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (MainImage already present)", fetcher.diffusionCalls)
+	}
+}
+
+func TestResolveImage_NoOriginFallsBackToVisuals(t *testing.T) {
+	fetcher := &fakeFetcher{}
+	r := NewResolver(newFakeStore(), fetcher, nil)
+
+	d := diffusionWithOrigin("d1", "", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-banner"})
+	got := r.ResolveImage(context.Background(), d)
+
+	want := radiofrance.DiffusionImageURL(d)
+	if got != want {
+		t.Errorf("ResolveImage = %q, want %q", got, want)
+	}
+	if fetcher.diffusionCalls != 0 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (not a rerun)", fetcher.diffusionCalls)
+	}
+}
+
+func TestResolveImage_RerunFetchesOriginMainImageOnCacheMiss(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
+		"origin1": {ID: "origin1", MainImage: "uuid-episode"},
+	}}
+	r := NewResolver(store, fetcher, nil)
+
+	d := diffusionWithOrigin("d1", "origin1", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-show-banner"})
+	got := r.ResolveImage(context.Background(), d)
+
+	want := radiofrance.ImageURL(nil, "uuid-episode")
+	if got != want {
+		t.Errorf("ResolveImage = %q, want %q (origin diffusion's MainImage)", got, want)
+	}
+	if fetcher.diffusionCalls != 1 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 1", fetcher.diffusionCalls)
+	}
+	if store.originImages["origin1"] != "uuid-episode" {
+		t.Errorf("store.originImages[origin1] = %q, want it cached", store.originImages["origin1"])
+	}
+}
+
+func TestResolveImage_RerunUsesCachedOriginImageWithoutFetching(t *testing.T) {
+	store := newFakeStore()
+	store.originImages["origin1"] = "uuid-episode-cached"
+	fetcher := &fakeFetcher{} // should not be called
+	r := NewResolver(store, fetcher, nil)
+
+	d := diffusionWithOrigin("d1", "origin1")
+	got := r.ResolveImage(context.Background(), d)
+
+	want := radiofrance.ImageURL(nil, "uuid-episode-cached")
+	if got != want {
+		t.Errorf("ResolveImage = %q, want %q", got, want)
+	}
+	if fetcher.diffusionCalls != 0 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (cache hit)", fetcher.diffusionCalls)
+	}
+}
+
+func TestResolveImage_RerunFallsBackToVisualsWhenOriginHasNoMainImage(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
+		"origin1": {ID: "origin1"}, // no MainImage either
+	}}
+	r := NewResolver(store, fetcher, nil)
+
+	d := diffusionWithOrigin("d1", "origin1", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-show-banner"})
+	got := r.ResolveImage(context.Background(), d)
+
+	want := radiofrance.DiffusionImageURL(d)
+	if got != want {
+		t.Errorf("ResolveImage = %q, want %q (visuals fallback)", got, want)
+	}
+	if mainImage, ok := store.originImages["origin1"]; !ok || mainImage != "" {
+		t.Errorf("expected the empty result to be cached, got %q, ok=%v", mainImage, ok)
+	}
+}
+
+func TestResolveImage_RerunFallsBackToVisualsWhenOriginFetchFails(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{diffusionErr: errors.New("upstream boom")}
+	r := NewResolver(store, fetcher, nil)
+
+	d := diffusionWithOrigin("d1", "origin1", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-show-banner"})
+	got := r.ResolveImage(context.Background(), d)
+
+	want := radiofrance.DiffusionImageURL(d)
+	if got != want {
+		t.Errorf("ResolveImage = %q, want %q (visuals fallback)", got, want)
+	}
+	if _, ok := store.originImages["origin1"]; ok {
+		t.Error("did not expect a cache entry when the fetch failed")
 	}
 }

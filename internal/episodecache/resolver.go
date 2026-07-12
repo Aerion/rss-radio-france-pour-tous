@@ -15,11 +15,14 @@ import (
 type store interface {
 	Get(ctx context.Context, manifestationID string) (Entry, bool, error)
 	Upsert(ctx context.Context, e Entry) error
+	GetOriginImage(ctx context.Context, diffusionID string) (mainImage string, ok bool, err error)
+	UpsertOriginImage(ctx context.Context, diffusionID, mainImage string) error
 }
 
 // fetcher is the subset of *radiofrance.Client's behavior Resolver needs.
 type fetcher interface {
 	GetManifestation(ctx context.Context, manifestationID string) (radiofrance.ManifestationDetails, error)
+	GetDiffusion(ctx context.Context, diffusionID string) (radiofrance.Diffusion, error)
 }
 
 // CacheObserver receives the outcome of each manifestation cache lookup,
@@ -209,4 +212,56 @@ func (r *Resolver) ResolveAudioURL(ctx context.Context, manifestationID string) 
 		slog.Error("episodecache: failed to cache manifestation", "manifestationID", manifestationID, "error", err)
 	}
 	return details.URL, entry.ShowID, entry.ShowTitle, nil
+}
+
+// ResolveImage returns the cover image URL to use for d, implementing
+// feed.ImageResolver.
+//
+// d's own MainImage/Visuals are used directly when MainImage is present -
+// see radiofrance.DiffusionImageURL. Reruns typically have no MainImage of
+// their own, though, and fall back to Visuals, which is usually just the
+// enclosing show's shared banner rather than real per-episode art (see
+// radiofrance.Diffusion.OriginDiffusionID). For a rerun, this instead
+// resolves the origin broadcast's MainImage - cached indefinitely in
+// Postgres, since the origin diffusion's editorial content and artwork are
+// fixed once the episode has aired, unlike a manifestation's playable URL
+// which can expire.
+func (r *Resolver) ResolveImage(ctx context.Context, d radiofrance.Diffusion) string {
+	if d.MainImage != "" {
+		return radiofrance.DiffusionImageURL(d)
+	}
+
+	originID := d.OriginDiffusionID()
+	if originID == "" {
+		return radiofrance.DiffusionImageURL(d)
+	}
+
+	if mainImage := r.resolveOriginMainImage(ctx, originID); mainImage != "" {
+		return radiofrance.ImageURL(nil, mainImage)
+	}
+	return radiofrance.DiffusionImageURL(d)
+}
+
+// resolveOriginMainImage returns originID's MainImage (possibly ""),
+// consulting the cache before falling back to a live GetDiffusion call.
+// Failures are logged and degrade to "", same as the rest of this package.
+func (r *Resolver) resolveOriginMainImage(ctx context.Context, originID string) string {
+	if mainImage, ok, err := r.store.GetOriginImage(ctx, originID); err == nil && ok {
+		r.observeCacheLookup(ctx, true)
+		return mainImage
+	} else if err != nil {
+		slog.Warn("episodecache: failed to read origin diffusion image cache", "diffusionID", originID, "error", err)
+	}
+	r.observeCacheLookup(ctx, false)
+
+	origin, err := r.fetcher.GetDiffusion(ctx, originID)
+	if err != nil {
+		slog.Warn("episodecache: failed to fetch origin diffusion for image resolution", "diffusionID", originID, "error", err)
+		return ""
+	}
+
+	if err := r.store.UpsertOriginImage(ctx, originID, origin.MainImage); err != nil {
+		slog.Error("episodecache: failed to cache origin diffusion image", "diffusionID", originID, "error", err)
+	}
+	return origin.MainImage
 }

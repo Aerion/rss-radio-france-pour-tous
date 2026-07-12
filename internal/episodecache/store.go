@@ -66,6 +66,39 @@ func (s *Store) Upsert(ctx context.Context, e Entry) error {
 	return nil
 }
 
+// GetOriginImage returns the cached mainImage UUID for a rerun's origin
+// diffusion, or ok=false if it hasn't been fetched yet. mainImage may be ""
+// with ok=true, meaning the origin diffusion was already checked and simply
+// has no mainImage of its own.
+func (s *Store) GetOriginImage(ctx context.Context, diffusionID string) (mainImage string, ok bool, err error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT main_image FROM diffusion_origin_image_cache WHERE diffusion_id = $1`, diffusionID)
+
+	if err := row.Scan(&mainImage); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("querying diffusion_origin_image_cache: %w", err)
+	}
+	return mainImage, true, nil
+}
+
+// UpsertOriginImage caches mainImage (possibly "") as the resolved image for
+// origin diffusion diffusionID.
+func (s *Store) UpsertOriginImage(ctx context.Context, diffusionID, mainImage string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO diffusion_origin_image_cache (diffusion_id, main_image, fetched_at)
+		VALUES ($1, $2, now())
+		ON CONFLICT (diffusion_id) DO UPDATE SET
+			main_image = excluded.main_image,
+			fetched_at = excluded.fetched_at`,
+		diffusionID, mainImage)
+	if err != nil {
+		return fmt.Errorf("upserting diffusion_origin_image_cache: %w", err)
+	}
+	return nil
+}
+
 func durationToSeconds(d time.Duration) int {
 	return int(d.Seconds())
 }

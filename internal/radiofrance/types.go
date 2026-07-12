@@ -88,6 +88,11 @@ type Diffusion struct {
 		// serving the same underlying audio). See ManifestationID for how
 		// this client picks one.
 		Manifestations []string `json:"manifestations"`
+		// OriginDiffusion is the original broadcast a rerun repeats, present
+		// on reruns only (observed as a single-element array). Reruns
+		// otherwise look like independent diffusions but typically carry no
+		// MainImage of their own - see OriginDiffusionID.
+		OriginDiffusion []string `json:"originDiffusion"`
 	} `json:"relationships"`
 }
 
@@ -107,6 +112,18 @@ func (d Diffusion) ManifestationID() string {
 		return ""
 	}
 	return d.Relationships.Manifestations[0]
+}
+
+// OriginDiffusionID returns the ID of the original broadcast this diffusion
+// reruns, or "" if it isn't a rerun. Live samples show a rerun's own
+// MainImage is typically absent (falling back to Visuals, which are just the
+// show's shared banner), while the origin diffusion carries the real
+// per-episode artwork - see episodecache's image resolution.
+func (d Diffusion) OriginDiffusionID() string {
+	if len(d.Relationships.OriginDiffusion) == 0 {
+		return ""
+	}
+	return d.Relationships.OriginDiffusion[0]
 }
 
 // diffusionsResponse is the raw shape of GET shows/{id}/diffusions.
@@ -138,6 +155,13 @@ type diffusionsResponse struct {
 type showResponse struct {
 	Data struct {
 		Shows Show `json:"shows"`
+	} `json:"data"`
+}
+
+// diffusionResponse is the raw shape of GET diffusions/{id}.
+type diffusionResponse struct {
+	Data struct {
+		Diffusions Diffusion `json:"diffusions"`
 	} `json:"data"`
 }
 

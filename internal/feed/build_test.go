@@ -351,6 +351,54 @@ func (f fakeResolver) Resolve(ctx context.Context, showID, showTitle string, d r
 	return d.ManifestationID(), f.urlsByDiffusionID[d.ID], f.durationsByDiffusionID[d.ID]
 }
 
+// fakeImageResolver is a stand-in for internal/episodecache.Resolver's
+// ResolveImage method.
+type fakeImageResolver struct {
+	imageURLsByDiffusionID map[string]string
+}
+
+func (f fakeImageResolver) ResolveImage(ctx context.Context, d radiofrance.Diffusion) string {
+	return f.imageURLsByDiffusionID[d.ID]
+}
+
+func TestBuild_UsesImageResolverWhenConfigured(t *testing.T) {
+	b := Builder{
+		PublicBaseURL: testBuilder.PublicBaseURL,
+		ImageResolver: fakeImageResolver{imageURLsByDiffusionID: map[string]string{
+			"d1": "https://api.radiofrance.fr/v1/services/embed/image/uuid-origin?preset=568x568",
+		}},
+	}
+	// The diffusion's own visuals point elsewhere - the resolver's answer
+	// must win, proving Build defers to it rather than DiffusionImageURL.
+	d := diffusionWithManifestation("d1", 1700000000)
+	d.Visuals = []radiofrance.Visual{{Name: "square_banner", VisualUUID: "uuid-show-banner"}}
+
+	out, err := b.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(out, "uuid-origin") {
+		t.Errorf("expected the resolver's image URL in output:\n%s", out)
+	}
+	if strings.Contains(out, "uuid-show-banner") {
+		t.Errorf("did not expect the raw visuals-based image URL in output:\n%s", out)
+	}
+}
+
+func TestBuild_FallsBackToDiffusionImageURLWhenNoImageResolver(t *testing.T) {
+	d := diffusionWithManifestation("d1", 1700000000)
+	d.MainImage = "uuid-episode"
+
+	// testBuilder has no ImageResolver configured.
+	out, err := testBuilder.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(out, "uuid-episode") {
+		t.Errorf("expected DiffusionImageURL's MainImage-based URL in output:\n%s", out)
+	}
+}
+
 func TestBuild_IncludesDurationWhenResolverProvidesIt(t *testing.T) {
 	b := Builder{
 		PublicBaseURL: testBuilder.PublicBaseURL,
