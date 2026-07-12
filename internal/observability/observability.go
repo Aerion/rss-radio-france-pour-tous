@@ -41,6 +41,8 @@ type Observability struct {
 	radioFranceDuration metric.Float64Histogram
 
 	analyticsEvents metric.Int64Counter
+
+	manifestationCacheLookups metric.Int64Counter
 }
 
 // New sets up the Prometheus metric provider for serviceName.
@@ -89,15 +91,21 @@ func New(serviceName string) (*Observability, error) {
 	if err != nil {
 		return nil, err
 	}
+	manifestationCacheLookups, err := meter.Int64Counter("manifestation_cache_lookups_total",
+		metric.WithDescription("Manifestation cache lookups, labeled by outcome (hit/miss) - how often we avoid an extra Radio France API call."))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Observability{
-		promRegistry:        promRegistry,
-		meterProvider:       meterProvider,
-		httpRequests:        httpRequests,
-		httpRequestDuration: httpRequestDuration,
-		radioFranceRequests: radioFranceRequests,
-		radioFranceDuration: radioFranceDuration,
-		analyticsEvents:     analyticsEvents,
+		promRegistry:              promRegistry,
+		meterProvider:             meterProvider,
+		httpRequests:              httpRequests,
+		httpRequestDuration:       httpRequestDuration,
+		radioFranceRequests:       radioFranceRequests,
+		radioFranceDuration:       radioFranceDuration,
+		analyticsEvents:           analyticsEvents,
+		manifestationCacheLookups: manifestationCacheLookups,
 	}, nil
 }
 
@@ -130,4 +138,9 @@ func (o *Observability) ObserveRequest(ctx context.Context, endpoint string, ok 
 // ObserveAnalyticsEvent implements analytics.MetricsRecorder.
 func (o *Observability) ObserveAnalyticsEvent(outcome string) {
 	o.analyticsEvents.Add(context.Background(), 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+}
+
+// ObserveCacheLookup implements episodecache.CacheObserver.
+func (o *Observability) ObserveCacheLookup(ctx context.Context, outcome string) {
+	o.manifestationCacheLookups.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
 }

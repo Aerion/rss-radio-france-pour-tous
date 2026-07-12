@@ -22,6 +22,19 @@ type fetcher interface {
 	GetManifestation(ctx context.Context, manifestationID string) (radiofrance.ManifestationDetails, error)
 }
 
+// CacheObserver receives the outcome of each manifestation cache lookup,
+// for cache-effectiveness monitoring. Defined here rather than in a
+// metrics package so this package stays decoupled from any particular
+// metrics backend; observability.Observability implements it.
+type CacheObserver interface {
+	ObserveCacheLookup(ctx context.Context, outcome string)
+}
+
+const (
+	outcomeHit  = "hit"
+	outcomeMiss = "miss"
+)
+
 // Resolver turns a diffusion (or a bare manifestation ID) into playback
 // details, consulting the cache before falling back to the Radio France
 // API. Implements both feed.ManifestationResolver and
@@ -29,14 +42,30 @@ type fetcher interface {
 type Resolver struct {
 	store   store
 	fetcher fetcher
+	// observer is nil-able; lookups are simply unrecorded if it's nil.
+	observer CacheObserver
 }
 
 // NewResolver creates a Resolver backed by s and f. s is typically a
 // *Store; accepting the narrower unexported interface here (rather than
 // *Store concretely) is what lets tests inject an in-memory fake without
-// exporting that seam.
-func NewResolver(s store, f fetcher) *Resolver {
-	return &Resolver{store: s, fetcher: f}
+// exporting that seam. observer may be nil to skip recording cache
+// lookup metrics.
+func NewResolver(s store, f fetcher, observer CacheObserver) *Resolver {
+	return &Resolver{store: s, fetcher: f, observer: observer}
+}
+
+// observeCacheLookup records whether a single store.Get call yielded a
+// usable entry.
+func (r *Resolver) observeCacheLookup(ctx context.Context, hit bool) {
+	if r.observer == nil {
+		return
+	}
+	outcome := outcomeMiss
+	if hit {
+		outcome = outcomeHit
+	}
+	r.observer.ObserveCacheLookup(ctx, outcome)
 }
 
 // Resolve returns the manifestation ID, playable URL, and duration to use
@@ -117,8 +146,10 @@ func findPrincipal(candidates []string, included map[string]radiofrance.Manifest
 // flagged Principal, and still fresh for diffusionUpdatedTime.
 func (r *Resolver) findCachedPrincipal(ctx context.Context, candidates []string, diffusionUpdatedTime int64) (string, Entry, bool) {
 	for _, id := range candidates {
-		if e, ok, err := r.store.Get(ctx, id); err == nil && ok && e.Principal &&
-			e.DiffusionUpdatedTime == diffusionUpdatedTime && e.fresh() {
+		e, ok, err := r.store.Get(ctx, id)
+		hit := err == nil && ok && e.Principal && e.DiffusionUpdatedTime == diffusionUpdatedTime && e.fresh()
+		r.observeCacheLookup(ctx, hit)
+		if hit {
 			return id, e, true
 		}
 	}
@@ -149,7 +180,9 @@ func (r *Resolver) cache(ctx context.Context, id string, d radiofrance.Diffusion
 // e.g. an old link from before this cache existed.
 func (r *Resolver) ResolveAudioURL(ctx context.Context, manifestationID string) (url, showID, showTitle string, err error) {
 	entry, ok, getErr := r.store.Get(ctx, manifestationID)
-	if getErr == nil && ok && entry.fresh() {
+	hit := getErr == nil && ok && entry.fresh()
+	r.observeCacheLookup(ctx, hit)
+	if hit {
 		return entry.URL, entry.ShowID, entry.ShowTitle, nil
 	}
 

@@ -72,7 +72,7 @@ func run() error {
 
 	client := radiofrance.NewClient(http.DefaultClient, cfg.RadioFranceAPIToken, obs)
 
-	episodeCache := episodecache.NewResolver(episodecache.NewStore(pool), client)
+	episodeCache := episodecache.NewResolver(episodecache.NewStore(pool), client, obs)
 
 	server := httpapi.NewServer(client, cfg.PublicBaseURL, episodeCache, episodeCache, cfg.BlockedUserAgents)
 

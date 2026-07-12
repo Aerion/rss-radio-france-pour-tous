@@ -61,6 +61,16 @@ func (f *fakeFetcher) GetManifestation(ctx context.Context, manifestationID stri
 	return f.details[manifestationID], nil
 }
 
+// fakeCacheObserver records every outcome passed to ObserveCacheLookup, in
+// order, for tests to assert against.
+type fakeCacheObserver struct {
+	outcomes []string
+}
+
+func (o *fakeCacheObserver) ObserveCacheLookup(ctx context.Context, outcome string) {
+	o.outcomes = append(o.outcomes, outcome)
+}
+
 func diffusionWithManifestations(id string, updatedTime int64, manifestationIDs ...string) radiofrance.Diffusion {
 	d := radiofrance.Diffusion{ID: id, UpdatedTime: updatedTime}
 	d.Relationships.Manifestations = manifestationIDs
@@ -74,7 +84,7 @@ func diffusionWithManifestation(id, manifestationID string, updatedTime int64) r
 func TestResolve_PrefersPrincipalFromIncluded(t *testing.T) {
 	store := newFakeStore()
 	fetcher := &fakeFetcher{} // should not be called at all
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2", "m3")
 	included := map[string]radiofrance.ManifestationDetails{
@@ -112,7 +122,7 @@ func TestResolve_FallsBackToCachedPrincipalWhenNotInIncluded(t *testing.T) {
 		URL: "https://cdn.example.com/m2-cached.mp3", Duration: 91 * time.Second, FetchedAt: time.Now(),
 	}
 	fetcher := &fakeFetcher{}
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2", "m3")
 	// included has data, but none of it is principal (and m2 - the actual
@@ -145,7 +155,7 @@ func TestResolve_FallsBackToLiveFetchStoppingAtFirstPrincipal(t *testing.T) {
 		"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: true},
 		"m3": {URL: "https://cdn.example.com/m3.mp3", Duration: 30 * time.Second, Principal: false},
 	}}
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	// Nothing in included and nothing cached - must fetch live.
 	d := diffusionWithManifestations("d1", 100, "m1", "m2", "m3")
@@ -176,7 +186,7 @@ func TestResolve_DegradesToFirstSuccessfulFetchWhenNoPrincipalFound(t *testing.T
 		"m1": {URL: "https://cdn.example.com/m1.mp3", Duration: 10 * time.Second, Principal: false},
 		"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: false},
 	}}
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2")
 	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
@@ -198,7 +208,7 @@ func TestResolve_DegradesToFirstSuccessfulFetchWhenNoPrincipalFound(t *testing.T
 func TestResolve_DegradesToDefaultManifestationWhenEveryFetchFails(t *testing.T) {
 	store := newFakeStore()
 	fetcher := &fakeFetcher{err: errors.New("upstream boom")}
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2")
 	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
@@ -225,7 +235,7 @@ func TestResolve_SkipsFailingCandidateAndTriesNext(t *testing.T) {
 			"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: true},
 		},
 	}
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2")
 	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
@@ -242,7 +252,7 @@ func TestResolve_SkipsFailingCandidateAndTriesNext(t *testing.T) {
 }
 
 func TestResolve_NoManifestationReturnsEmpty(t *testing.T) {
-	r := NewResolver(newFakeStore(), &fakeFetcher{})
+	r := NewResolver(newFakeStore(), &fakeFetcher{}, nil)
 
 	d := radiofrance.Diffusion{ID: "d1"} // no Relationships.Manifestations
 	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
@@ -259,7 +269,7 @@ func TestResolveAudioURL_CacheHit(t *testing.T) {
 		ShowID: "show1", ShowTitle: "Show One", FetchedAt: time.Now(),
 	}
 	fetcher := &fakeFetcher{}
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	url, showID, showTitle, err := r.ResolveAudioURL(context.Background(), "m1")
 	if err != nil {
@@ -278,7 +288,7 @@ func TestResolveAudioURL_CacheMissPreservesNoPriorShowInfo(t *testing.T) {
 	fetcher := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
 		"m1": {URL: "https://cdn.example.com/a.mp3"},
 	}}
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	url, showID, showTitle, err := r.ResolveAudioURL(context.Background(), "m1")
 	if err != nil {
@@ -302,7 +312,7 @@ func TestResolveAudioURL_ExpiredEntryRefetchesAndKeepsShowInfo(t *testing.T) {
 	fetcher := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
 		"m1": {URL: "https://cdn.example.com/fresh.mp3"},
 	}}
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	url, showID, showTitle, err := r.ResolveAudioURL(context.Background(), "m1")
 	if err != nil {
@@ -322,10 +332,34 @@ func TestResolveAudioURL_ExpiredEntryRefetchesAndKeepsShowInfo(t *testing.T) {
 func TestResolveAudioURL_UpstreamErrorPropagates(t *testing.T) {
 	store := newFakeStore()
 	fetcher := &fakeFetcher{err: errors.New("upstream boom")}
-	r := NewResolver(store, fetcher)
+	r := NewResolver(store, fetcher, nil)
 
 	_, _, _, err := r.ResolveAudioURL(context.Background(), "m1")
 	if err == nil {
 		t.Fatal("expected an error, got nil")
+	}
+}
+
+func TestResolveAudioURL_ObservesCacheHitAndMiss(t *testing.T) {
+	store := newFakeStore()
+	store.entries["cached"] = Entry{
+		ManifestationID: "cached", URL: "https://cdn.example.com/cached.mp3", FetchedAt: time.Now(),
+	}
+	fetcher := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
+		"uncached": {URL: "https://cdn.example.com/uncached.mp3"},
+	}}
+	observer := &fakeCacheObserver{}
+	r := NewResolver(store, fetcher, observer)
+
+	if _, _, _, err := r.ResolveAudioURL(context.Background(), "cached"); err != nil {
+		t.Fatalf("ResolveAudioURL(cached): %v", err)
+	}
+	if _, _, _, err := r.ResolveAudioURL(context.Background(), "uncached"); err != nil {
+		t.Fatalf("ResolveAudioURL(uncached): %v", err)
+	}
+
+	want := []string{outcomeHit, outcomeMiss}
+	if len(observer.outcomes) != len(want) || observer.outcomes[0] != want[0] || observer.outcomes[1] != want[1] {
+		t.Errorf("observer.outcomes = %v, want %v", observer.outcomes, want)
 	}
 }
