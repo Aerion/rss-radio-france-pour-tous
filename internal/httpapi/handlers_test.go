@@ -18,7 +18,12 @@ func (noopInstrumenter) Wrap(route string, h http.HandlerFunc) http.HandlerFunc 
 
 func newTestServer(t *testing.T, api API, audioResolver AudioResolver) http.Handler {
 	t.Helper()
-	return NewServer(api, "https://radio-france-rss.example.com", nil, audioResolver).Routes(noopInstrumenter{})
+	return newTestServerWithBlockedUserAgents(t, api, audioResolver, nil)
+}
+
+func newTestServerWithBlockedUserAgents(t *testing.T, api API, audioResolver AudioResolver, blocked []string) http.Handler {
+	t.Helper()
+	return NewServer(api, "https://radio-france-rss.example.com", nil, audioResolver, blocked).Routes(noopInstrumenter{})
 }
 
 func TestHandleRequest_UnknownRoute404(t *testing.T) {
@@ -152,5 +157,55 @@ func TestHandleRequest_Audio_UpstreamError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
+	}
+}
+
+func TestHandleRequest_RSSFeed_BlockedUserAgent(t *testing.T) {
+	h := newTestServerWithBlockedUserAgents(t, &fakeAPI{}, &fakeAudioResolver{}, []string{"gptbot"})
+	req := httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 GPTBot/1.0")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestHandleRequest_Audio_BlockedUserAgent(t *testing.T) {
+	h := newTestServerWithBlockedUserAgents(t, &fakeAPI{}, &fakeAudioResolver{}, []string{"gptbot"})
+	req := httptest.NewRequest(http.MethodGet, "/audio/301c6eb1-61d4-4120-8cd7-e415ffc4f7df", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 GPTBot/1.0")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestHandleRequest_RSSFeed_NonBlockedUserAgentPasses(t *testing.T) {
+	show := radiofrance.Show{ID: "0b91efaf", Title: "Affaires sensibles"}
+	api := &fakeAPI{showDiffusions: radiofrance.ShowDiffusions{ShowDetails: show}}
+	h := newTestServerWithBlockedUserAgents(t, api, &fakeAudioResolver{}, []string{"gptbot"})
+	req := httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; SomeBrowser/1.0)")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestHandleRequest_Homepage_BlockedUserAgentStillAllowed(t *testing.T) {
+	h := newTestServerWithBlockedUserAgents(t, &fakeAPI{}, &fakeAudioResolver{}, []string{"gptbot"})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 GPTBot/1.0")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 (blocklist only applies to feed routes)", rec.Code)
 	}
 }

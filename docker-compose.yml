@@ -10,6 +10,7 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set, see .env.example}
       RADIOFRANCE_API_TOKEN: ${RADIOFRANCE_API_TOKEN:?RADIOFRANCE_API_TOKEN must be set, see .env.example}
       DATABASE_URL: postgres://rss:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set, see .env.example}@postgres:5432/rss?sslmode=disable
+      BLOCKED_USER_AGENTS: ${BLOCKED_USER_AGENTS:-}
     restart: unless-stopped
     depends_on:
       migrate:

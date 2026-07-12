@@ -74,7 +74,7 @@ func run() error {
 
 	episodeCache := episodecache.NewResolver(episodecache.NewStore(pool), client)
 
-	server := httpapi.NewServer(client, cfg.PublicBaseURL, episodeCache, episodeCache)
+	server := httpapi.NewServer(client, cfg.PublicBaseURL, episodeCache, episodeCache, cfg.BlockedUserAgents)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", server.Routes(obs, analyticsWriter))

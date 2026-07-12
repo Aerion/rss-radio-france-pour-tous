@@ -31,21 +31,25 @@ type AudioResolver interface {
 
 // Server holds the dependencies shared by all HTTP handlers.
 type Server struct {
-	api           API
-	feedBuilder   feed.Builder
-	audioResolver AudioResolver
-	publicBaseURL string
+	api               API
+	feedBuilder       feed.Builder
+	audioResolver     AudioResolver
+	publicBaseURL     string
+	blockedUserAgents []string
 }
 
 // NewServer builds a Server. publicBaseURL is this app's own externally
 // visible base URL (e.g. "https://rss.example.com"), used to build
-// self-referencing links in the feed and search results.
-func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, audioResolver AudioResolver) *Server {
+// self-referencing links in the feed and search results. blockedUserAgents
+// is a lowercased list of substrings (see config.Config.BlockedUserAgents);
+// requests to feed-serving routes with a matching User-Agent get a 403.
+func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, audioResolver AudioResolver, blockedUserAgents []string) *Server {
 	return &Server{
-		api:           api,
-		feedBuilder:   feed.Builder{PublicBaseURL: publicBaseURL, Resolver: manifestationResolver},
-		audioResolver: audioResolver,
-		publicBaseURL: publicBaseURL,
+		api:               api,
+		feedBuilder:       feed.Builder{PublicBaseURL: publicBaseURL, Resolver: manifestationResolver},
+		audioResolver:     audioResolver,
+		publicBaseURL:     publicBaseURL,
+		blockedUserAgents: blockedUserAgents,
 	}
 }
 
@@ -71,7 +75,7 @@ func (s *Server) Routes(instrs ...Instrumenter) http.Handler {
 	register("GET /{$}", "home", s.handleHome)
 	register("GET /robots.txt", "robots", s.handleRobots)
 	register("GET /search/", "search", s.handleSearch)
-	register("GET /rss/{showId}", "rss", s.handleRSS)
-	register("GET /audio/{manifestationId}", "audio", s.handleAudio)
+	register("GET /rss/{showId}", "rss", s.blockUserAgent(s.handleRSS))
+	register("GET /audio/{manifestationId}", "audio", s.blockUserAgent(s.handleAudio))
 	return mux
 }

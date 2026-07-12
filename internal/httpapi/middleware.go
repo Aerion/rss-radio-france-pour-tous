@@ -3,6 +3,7 @@ package httpapi
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 )
 
 // handlerFunc is like http.HandlerFunc but can return an error, which adapt
@@ -28,5 +29,21 @@ func adapt(h handlerFunc) http.HandlerFunc {
 			slog.Error("error handling request", "error", err, "path", r.URL.Path)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		}
+	}
+}
+
+// blockUserAgent rejects requests whose User-Agent header contains one of
+// s.blockedUserAgents (case-insensitive substring match) with 403, before h
+// runs - used to keep scrapers off the feed-serving routes.
+func (s *Server) blockUserAgent(h handlerFunc) handlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		ua := strings.ToLower(r.UserAgent())
+		for _, blocked := range s.blockedUserAgents {
+			if strings.Contains(ua, blocked) {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return nil
+			}
+		}
+		return h(w, r)
 	}
 }
