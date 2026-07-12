@@ -399,6 +399,55 @@ func TestBuild_FallsBackToDiffusionImageURLWhenNoImageResolver(t *testing.T) {
 	}
 }
 
+// fakeDescriptionResolver is a stand-in for internal/episodecache.Resolver's
+// ResolveDescription method.
+type fakeDescriptionResolver struct {
+	bodyMarkdownByDiffusionID map[string]string
+	standfirstByDiffusionID   map[string]string
+}
+
+func (f fakeDescriptionResolver) ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (string, string) {
+	return f.bodyMarkdownByDiffusionID[d.ID], f.standfirstByDiffusionID[d.ID]
+}
+
+func TestBuild_UsesDescriptionResolverWhenConfigured(t *testing.T) {
+	b := Builder{
+		PublicBaseURL: testBuilder.PublicBaseURL,
+		DescriptionResolver: fakeDescriptionResolver{bodyMarkdownByDiffusionID: map[string]string{
+			"d1": "**rich** origin body",
+		}},
+	}
+	// The diffusion's own bodyMarkdown says something else - the resolver's
+	// answer must win, proving Build defers to it rather than d.BodyMarkdown.
+	d := diffusionWithManifestation("d1", 1700000000)
+	d.BodyMarkdown = "flattened rerun body"
+
+	out, err := b.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(out, "rich") {
+		t.Errorf("expected the resolver's body markdown in output:\n%s", out)
+	}
+	if strings.Contains(out, "flattened rerun body") {
+		t.Errorf("did not expect the diffusion's own bodyMarkdown in output:\n%s", out)
+	}
+}
+
+func TestBuild_FallsBackToOwnFieldsWhenNoDescriptionResolver(t *testing.T) {
+	d := diffusionWithManifestation("d1", 1700000000)
+	d.BodyMarkdown = "own body"
+
+	// testBuilder has no DescriptionResolver configured.
+	out, err := testBuilder.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(out, "own body") {
+		t.Errorf("expected the diffusion's own bodyMarkdown in output:\n%s", out)
+	}
+}
+
 func TestBuild_IncludesDurationWhenResolverProvidesIt(t *testing.T) {
 	b := Builder{
 		PublicBaseURL: testBuilder.PublicBaseURL,

@@ -57,6 +57,18 @@ type ImageResolver interface {
 	ResolveImage(ctx context.Context, d radiofrance.Diffusion) string
 }
 
+// DescriptionResolver picks the (bodyMarkdown, standfirst) pair to use for a
+// diffusion's feed description, typically backed by internal/episodecache.
+// Unlike using d.BodyMarkdown/d.Standfirst directly, it can follow a rerun's
+// origin diffusion (an upstream call, cached) to find the original
+// broadcast's full editorial notes when the rerun's own copy is a flattened,
+// auto-derived one - see episodecache.Resolver.ResolveDescription. Declared
+// here rather than importing episodecache directly for the same reason as
+// ManifestationResolver.
+type DescriptionResolver interface {
+	ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (bodyMarkdown, standfirst string)
+}
+
 // Builder builds RSS feeds for shows.
 type Builder struct {
 	// PublicBaseURL is this app's own externally-visible base URL, used to
@@ -76,6 +88,11 @@ type Builder struct {
 	// radiofrance.DiffusionImageURL(d) directly, with no rerun/origin
 	// handling - same escape hatch rationale as Resolver.
 	ImageResolver ImageResolver
+
+	// DescriptionResolver is nil-able. When nil, Build falls back to using
+	// d.BodyMarkdown/d.Standfirst directly, with no rerun/origin handling -
+	// same escape hatch rationale as Resolver.
+	DescriptionResolver DescriptionResolver
 }
 
 // Build renders an RSS 2.0 feed for one page of a show's diffusions.
@@ -137,19 +154,27 @@ type resolution struct {
 	url             string
 	duration        time.Duration
 	imageURL        string
+	bodyMarkdown    string
+	standfirst      string
 }
 
-// resolveAll resolves every diffusion's manifestation ID/URL/duration and
-// cover image concurrently (bounded by resolveConcurrency), keyed by
-// diffusion ID. With no Resolver/ImageResolver configured, the corresponding
-// fields fall back to each diffusion's raw ManifestationID/DiffusionImageURL
-// with no upstream calls.
+// resolveAll resolves every diffusion's manifestation ID/URL/duration, cover
+// image, and description concurrently (bounded by resolveConcurrency), keyed
+// by diffusion ID. With none of Resolver/ImageResolver/DescriptionResolver
+// configured, the corresponding fields fall back to each diffusion's raw
+// ManifestationID/DiffusionImageURL/BodyMarkdown+Standfirst with no upstream
+// calls.
 func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) map[string]resolution {
 	results := make(map[string]resolution, len(sd.Diffusions))
 
-	if b.Resolver == nil && b.ImageResolver == nil {
+	if b.Resolver == nil && b.ImageResolver == nil && b.DescriptionResolver == nil {
 		for _, d := range sd.Diffusions {
-			results[d.ID] = resolution{manifestationID: d.ManifestationID(), imageURL: radiofrance.DiffusionImageURL(d)}
+			results[d.ID] = resolution{
+				manifestationID: d.ManifestationID(),
+				imageURL:        radiofrance.DiffusionImageURL(d),
+				bodyMarkdown:    d.BodyMarkdown,
+				standfirst:      d.Standfirst,
+			}
 		}
 		return results
 	}
@@ -170,13 +195,18 @@ func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) 
 			} else {
 				res.imageURL = radiofrance.DiffusionImageURL(d)
 			}
+			if b.DescriptionResolver != nil {
+				res.bodyMarkdown, res.standfirst = b.DescriptionResolver.ResolveDescription(gctx, d)
+			} else {
+				res.bodyMarkdown, res.standfirst = d.BodyMarkdown, d.Standfirst
+			}
 			mu.Lock()
 			results[d.ID] = res
 			mu.Unlock()
 			return nil
 		})
 	}
-	_ = g.Wait() // Resolve/ResolveImage degrade gracefully on error rather than failing; nothing to propagate here.
+	_ = g.Wait() // Resolve/ResolveImage/ResolveDescription degrade gracefully on error rather than failing; nothing to propagate here.
 	return results
 }
 
@@ -187,9 +217,9 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 		return item{}, false
 	}
 
-	description := stripShortcodes(d.BodyMarkdown)
+	description := stripShortcodes(res.bodyMarkdown)
 	if isPlaceholder(description) {
-		description = d.Standfirst
+		description = res.standfirst
 		if isPlaceholder(description) {
 			description = ""
 		}

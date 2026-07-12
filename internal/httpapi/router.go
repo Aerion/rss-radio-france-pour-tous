@@ -43,10 +43,10 @@ type Server struct {
 // self-referencing links in the feed and search results. blockedUserAgents
 // is a lowercased list of substrings (see config.Config.BlockedUserAgents);
 // requests to feed-serving routes with a matching User-Agent get a 403.
-func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, imageResolver feed.ImageResolver, audioResolver AudioResolver, blockedUserAgents []string) *Server {
+func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, imageResolver feed.ImageResolver, descriptionResolver feed.DescriptionResolver, audioResolver AudioResolver, blockedUserAgents []string) *Server {
 	return &Server{
 		api:               api,
-		feedBuilder:       feed.Builder{PublicBaseURL: publicBaseURL, Resolver: manifestationResolver, ImageResolver: imageResolver},
+		feedBuilder:       feed.Builder{PublicBaseURL: publicBaseURL, Resolver: manifestationResolver, ImageResolver: imageResolver, DescriptionResolver: descriptionResolver},
 		audioResolver:     audioResolver,
 		publicBaseURL:     publicBaseURL,
 		blockedUserAgents: blockedUserAgents,

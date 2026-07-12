@@ -3,7 +3,9 @@ package episodecache
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
 )
@@ -17,6 +19,8 @@ type store interface {
 	Upsert(ctx context.Context, e Entry) error
 	GetOriginImage(ctx context.Context, diffusionID string) (mainImage string, ok bool, err error)
 	UpsertOriginImage(ctx context.Context, diffusionID, mainImage string) error
+	GetOriginBody(ctx context.Context, diffusionID string) (bodyMarkdown, standfirst string, ok bool, err error)
+	UpsertOriginBody(ctx context.Context, diffusionID, bodyMarkdown, standfirst string) error
 }
 
 // fetcher is the subset of *radiofrance.Client's behavior Resolver needs.
@@ -264,4 +268,64 @@ func (r *Resolver) resolveOriginMainImage(ctx context.Context, originID string) 
 		slog.Error("episodecache: failed to cache origin diffusion image", "diffusionID", originID, "error", err)
 	}
 	return origin.MainImage
+}
+
+// ResolveDescription returns the (bodyMarkdown, standfirst) pair to use for
+// d's feed description, implementing feed.DescriptionResolver.
+//
+// Unlike a rerun's MainImage (see ResolveImage), a rerun's own bodyMarkdown
+// is rarely blank - but live samples show it's often a flattened,
+// auto-derived copy of the origin broadcast's real editorial notes, stripped
+// of links, bold, lists, and embed shortcodes (and observed once to even
+// swap out a reference the origin had). For a rerun, this prefers the origin
+// diffusion's bodyMarkdown/standfirst - cached indefinitely in Postgres,
+// same rationale as ResolveImage - falling back to d's own fields only if
+// the origin's turn out to be blank or unreachable.
+func (r *Resolver) ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (bodyMarkdown, standfirst string) {
+	originID := d.OriginDiffusionID()
+	if originID == "" {
+		return d.BodyMarkdown, d.Standfirst
+	}
+
+	body, sf := r.resolveOriginBody(ctx, originID)
+	if isBlank(body) {
+		return d.BodyMarkdown, d.Standfirst
+	}
+	return body, sf
+}
+
+// isBlank reports whether s is empty or contains nothing but
+// whitespace/periods - the same definition feed.isPlaceholder uses for a
+// meaningless bodyMarkdown/standfirst value. Duplicated here (rather than
+// imported) to avoid a dependency from this package back onto feed, which
+// already depends on episodecache through the resolver interfaces.
+func isBlank(s string) bool {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '.'
+	}) == ""
+}
+
+// resolveOriginBody returns originID's (bodyMarkdown, standfirst),
+// consulting the cache before falling back to a live GetDiffusion call.
+// Failures are logged and degrade to ("", ""), same as the rest of this
+// package.
+func (r *Resolver) resolveOriginBody(ctx context.Context, originID string) (bodyMarkdown, standfirst string) {
+	if body, sf, ok, err := r.store.GetOriginBody(ctx, originID); err == nil && ok {
+		r.observeCacheLookup(ctx, true)
+		return body, sf
+	} else if err != nil {
+		slog.Warn("episodecache: failed to read origin diffusion body cache", "diffusionID", originID, "error", err)
+	}
+	r.observeCacheLookup(ctx, false)
+
+	origin, err := r.fetcher.GetDiffusion(ctx, originID)
+	if err != nil {
+		slog.Warn("episodecache: failed to fetch origin diffusion for description resolution", "diffusionID", originID, "error", err)
+		return "", ""
+	}
+
+	if err := r.store.UpsertOriginBody(ctx, originID, origin.BodyMarkdown, origin.Standfirst); err != nil {
+		slog.Error("episodecache: failed to cache origin diffusion body", "diffusionID", originID, "error", err)
+	}
+	return origin.BodyMarkdown, origin.Standfirst
 }
