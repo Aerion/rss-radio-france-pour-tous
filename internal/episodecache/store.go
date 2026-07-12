@@ -99,39 +99,45 @@ func (s *Store) UpsertOriginImage(ctx context.Context, diffusionID, mainImage st
 	return nil
 }
 
-// GetOriginBody returns the cached bodyMarkdown/standfirst for a rerun's
-// origin diffusion, or ok=false if that pair hasn't been fetched yet (even
-// if the row already exists because its mainImage was cached separately -
-// see the NULL columns added in migration 00004).
-func (s *Store) GetOriginBody(ctx context.Context, diffusionID string) (bodyMarkdown, standfirst string, ok bool, err error) {
+// GetOriginBody returns the cached bodyMarkdown/standfirst/createdTime for a
+// rerun's origin diffusion, or ok=false if that trio hasn't been fetched yet
+// (even if the row already exists because its mainImage was cached
+// separately - see the NULL columns added in migrations 00004/00005).
+func (s *Store) GetOriginBody(ctx context.Context, diffusionID string) (bodyMarkdown, standfirst string, createdTime int64, ok bool, err error) {
 	row := s.pool.QueryRow(ctx, `
-		SELECT body_markdown, standfirst FROM diffusion_origin_image_cache WHERE diffusion_id = $1`, diffusionID)
+		SELECT body_markdown, standfirst, created_time FROM diffusion_origin_image_cache WHERE diffusion_id = $1`, diffusionID)
 
 	var body, sf *string
-	if err := row.Scan(&body, &sf); err != nil {
+	var ct *int64
+	if err := row.Scan(&body, &sf, &ct); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return "", "", false, nil
+			return "", "", 0, false, nil
 		}
-		return "", "", false, fmt.Errorf("querying diffusion_origin_image_cache: %w", err)
+		return "", "", 0, false, fmt.Errorf("querying diffusion_origin_image_cache: %w", err)
 	}
 	if body == nil {
-		return "", "", false, nil
+		return "", "", 0, false, nil
 	}
-	return *body, *sf, true, nil
+	if ct != nil {
+		createdTime = *ct
+	}
+	return *body, *sf, createdTime, true, nil
 }
 
-// UpsertOriginBody caches bodyMarkdown/standfirst (either may be "") as the
-// resolved description fields for origin diffusion diffusionID, without
-// disturbing any mainImage already cached for the same row.
-func (s *Store) UpsertOriginBody(ctx context.Context, diffusionID, bodyMarkdown, standfirst string) error {
+// UpsertOriginBody caches bodyMarkdown/standfirst (either may be "") and
+// createdTime as the resolved description fields for origin diffusion
+// diffusionID, without disturbing any mainImage already cached for the same
+// row.
+func (s *Store) UpsertOriginBody(ctx context.Context, diffusionID, bodyMarkdown, standfirst string, createdTime int64) error {
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO diffusion_origin_image_cache (diffusion_id, body_markdown, standfirst, fetched_at)
-		VALUES ($1, $2, $3, now())
+		INSERT INTO diffusion_origin_image_cache (diffusion_id, body_markdown, standfirst, created_time, fetched_at)
+		VALUES ($1, $2, $3, $4, now())
 		ON CONFLICT (diffusion_id) DO UPDATE SET
 			body_markdown = excluded.body_markdown,
 			standfirst = excluded.standfirst,
+			created_time = excluded.created_time,
 			fetched_at = excluded.fetched_at`,
-		diffusionID, bodyMarkdown, standfirst)
+		diffusionID, bodyMarkdown, standfirst, createdTime)
 	if err != nil {
 		return fmt.Errorf("upserting diffusion_origin_image_cache: %w", err)
 	}

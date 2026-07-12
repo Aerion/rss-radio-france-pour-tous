@@ -19,8 +19,8 @@ type store interface {
 	Upsert(ctx context.Context, e Entry) error
 	GetOriginImage(ctx context.Context, diffusionID string) (mainImage string, ok bool, err error)
 	UpsertOriginImage(ctx context.Context, diffusionID, mainImage string) error
-	GetOriginBody(ctx context.Context, diffusionID string) (bodyMarkdown, standfirst string, ok bool, err error)
-	UpsertOriginBody(ctx context.Context, diffusionID, bodyMarkdown, standfirst string) error
+	GetOriginBody(ctx context.Context, diffusionID string) (bodyMarkdown, standfirst string, createdTime int64, ok bool, err error)
+	UpsertOriginBody(ctx context.Context, diffusionID, bodyMarkdown, standfirst string, createdTime int64) error
 }
 
 // fetcher is the subset of *radiofrance.Client's behavior Resolver needs.
@@ -271,7 +271,11 @@ func (r *Resolver) resolveOriginMainImage(ctx context.Context, originID string) 
 }
 
 // ResolveDescription returns the (bodyMarkdown, standfirst) pair to use for
-// d's feed description, implementing feed.DescriptionResolver.
+// d's feed description, implementing feed.DescriptionResolver. originCreatedTime
+// is the origin diffusion's own CreatedTime (its original broadcast date) as
+// a Unix timestamp, or 0 if d isn't a rerun or the origin couldn't be
+// resolved at all - callers use it to flag a rerun in the feed, independent
+// of whether the origin's bodyMarkdown ended up being usable.
 //
 // Unlike a rerun's MainImage (see ResolveImage), a rerun's own bodyMarkdown
 // is rarely blank - but live samples show it's often a flattened,
@@ -280,18 +284,21 @@ func (r *Resolver) resolveOriginMainImage(ctx context.Context, originID string) 
 // swap out a reference the origin had). For a rerun, this prefers the origin
 // diffusion's bodyMarkdown/standfirst - cached indefinitely in Postgres,
 // same rationale as ResolveImage - falling back to d's own fields only if
-// the origin's turn out to be blank or unreachable.
-func (r *Resolver) ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (bodyMarkdown, standfirst string) {
+// the origin's turn out to be blank.
+func (r *Resolver) ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (bodyMarkdown, standfirst string, originCreatedTime int64) {
 	originID := d.OriginDiffusionID()
 	if originID == "" {
-		return d.BodyMarkdown, d.Standfirst
+		return d.BodyMarkdown, d.Standfirst, 0
 	}
 
-	body, sf := r.resolveOriginBody(ctx, originID)
-	if isBlank(body) {
-		return d.BodyMarkdown, d.Standfirst
+	body, sf, createdTime, ok := r.resolveOriginBody(ctx, originID)
+	if !ok {
+		return d.BodyMarkdown, d.Standfirst, 0
 	}
-	return body, sf
+	if isBlank(body) {
+		return d.BodyMarkdown, d.Standfirst, createdTime
+	}
+	return body, sf, createdTime
 }
 
 // isBlank reports whether s is empty or contains nothing but
@@ -305,14 +312,16 @@ func isBlank(s string) bool {
 	}) == ""
 }
 
-// resolveOriginBody returns originID's (bodyMarkdown, standfirst),
-// consulting the cache before falling back to a live GetDiffusion call.
-// Failures are logged and degrade to ("", ""), same as the rest of this
-// package.
-func (r *Resolver) resolveOriginBody(ctx context.Context, originID string) (bodyMarkdown, standfirst string) {
-	if body, sf, ok, err := r.store.GetOriginBody(ctx, originID); err == nil && ok {
+// resolveOriginBody returns originID's (bodyMarkdown, standfirst,
+// createdTime), consulting the cache before falling back to a live
+// GetDiffusion call. ok is false only when the origin diffusion couldn't be
+// resolved at all (upstream failure); a successfully resolved origin with no
+// real content of its own still reports ok=true with blank fields, so
+// callers can still use its createdTime.
+func (r *Resolver) resolveOriginBody(ctx context.Context, originID string) (bodyMarkdown, standfirst string, createdTime int64, ok bool) {
+	if body, sf, ct, cached, err := r.store.GetOriginBody(ctx, originID); err == nil && cached {
 		r.observeCacheLookup(ctx, true)
-		return body, sf
+		return body, sf, ct, true
 	} else if err != nil {
 		slog.Warn("episodecache: failed to read origin diffusion body cache", "diffusionID", originID, "error", err)
 	}
@@ -321,11 +330,11 @@ func (r *Resolver) resolveOriginBody(ctx context.Context, originID string) (body
 	origin, err := r.fetcher.GetDiffusion(ctx, originID)
 	if err != nil {
 		slog.Warn("episodecache: failed to fetch origin diffusion for description resolution", "diffusionID", originID, "error", err)
-		return "", ""
+		return "", "", 0, false
 	}
 
-	if err := r.store.UpsertOriginBody(ctx, originID, origin.BodyMarkdown, origin.Standfirst); err != nil {
+	if err := r.store.UpsertOriginBody(ctx, originID, origin.BodyMarkdown, origin.Standfirst, origin.CreatedTime); err != nil {
 		slog.Error("episodecache: failed to cache origin diffusion body", "diffusionID", originID, "error", err)
 	}
-	return origin.BodyMarkdown, origin.Standfirst
+	return origin.BodyMarkdown, origin.Standfirst, origin.CreatedTime, true
 }

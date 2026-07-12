@@ -19,20 +19,22 @@ type fakeStore struct {
 	originGets    int
 	originUpserts int
 
-	originBodies      map[string]string
-	originStandfirsts map[string]string
-	originBodySet     map[string]bool
-	originBodyGets    int
-	originBodyUpserts int
+	originBodies       map[string]string
+	originStandfirsts  map[string]string
+	originCreatedTimes map[string]int64
+	originBodySet      map[string]bool
+	originBodyGets     int
+	originBodyUpserts  int
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		entries:           map[string]Entry{},
-		originImages:      map[string]string{},
-		originBodies:      map[string]string{},
-		originStandfirsts: map[string]string{},
-		originBodySet:     map[string]bool{},
+		entries:            map[string]Entry{},
+		originImages:       map[string]string{},
+		originBodies:       map[string]string{},
+		originStandfirsts:  map[string]string{},
+		originCreatedTimes: map[string]int64{},
+		originBodySet:      map[string]bool{},
 	}
 }
 
@@ -63,16 +65,17 @@ func (s *fakeStore) UpsertOriginImage(ctx context.Context, diffusionID, mainImag
 	return nil
 }
 
-func (s *fakeStore) GetOriginBody(ctx context.Context, diffusionID string) (string, string, bool, error) {
+func (s *fakeStore) GetOriginBody(ctx context.Context, diffusionID string) (string, string, int64, bool, error) {
 	s.originBodyGets++
 	ok := s.originBodySet[diffusionID]
-	return s.originBodies[diffusionID], s.originStandfirsts[diffusionID], ok, nil
+	return s.originBodies[diffusionID], s.originStandfirsts[diffusionID], s.originCreatedTimes[diffusionID], ok, nil
 }
 
-func (s *fakeStore) UpsertOriginBody(ctx context.Context, diffusionID, bodyMarkdown, standfirst string) error {
+func (s *fakeStore) UpsertOriginBody(ctx context.Context, diffusionID, bodyMarkdown, standfirst string, createdTime int64) error {
 	s.originBodyUpserts++
 	s.originBodies[diffusionID] = bodyMarkdown
 	s.originStandfirsts[diffusionID] = standfirst
+	s.originCreatedTimes[diffusionID] = createdTime
 	s.originBodySet[diffusionID] = true
 	return nil
 }
@@ -538,10 +541,13 @@ func TestResolveDescription_NoOriginUsesOwnFields(t *testing.T) {
 	r := NewResolver(newFakeStore(), fetcher, nil)
 
 	d := radiofrance.Diffusion{ID: "d1", BodyMarkdown: "own body", Standfirst: "own standfirst"}
-	body, sf := r.ResolveDescription(context.Background(), d)
+	body, sf, originCreatedTime := r.ResolveDescription(context.Background(), d)
 
 	if body != "own body" || sf != "own standfirst" {
 		t.Errorf("ResolveDescription = (%q, %q), want own fields", body, sf)
+	}
+	if originCreatedTime != 0 {
+		t.Errorf("originCreatedTime = %d, want 0 (not a rerun)", originCreatedTime)
 	}
 	if fetcher.diffusionCalls != 0 {
 		t.Errorf("fetcher.diffusionCalls = %d, want 0 (not a rerun)", fetcher.diffusionCalls)
@@ -551,16 +557,19 @@ func TestResolveDescription_NoOriginUsesOwnFields(t *testing.T) {
 func TestResolveDescription_RerunFetchesOriginBodyOnCacheMiss(t *testing.T) {
 	store := newFakeStore()
 	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
-		"origin1": {ID: "origin1", BodyMarkdown: "**rich** origin body", Standfirst: "origin standfirst"},
+		"origin1": {ID: "origin1", BodyMarkdown: "**rich** origin body", Standfirst: "origin standfirst", CreatedTime: 1704067200},
 	}}
 	r := NewResolver(store, fetcher, nil)
 
 	d := radiofrance.Diffusion{ID: "d1", BodyMarkdown: "flattened rerun body", Standfirst: "rerun standfirst"}
 	d.Relationships.OriginDiffusion = []string{"origin1"}
-	body, sf := r.ResolveDescription(context.Background(), d)
+	body, sf, originCreatedTime := r.ResolveDescription(context.Background(), d)
 
 	if body != "**rich** origin body" || sf != "origin standfirst" {
 		t.Errorf("ResolveDescription = (%q, %q), want origin diffusion's fields", body, sf)
+	}
+	if originCreatedTime != 1704067200 {
+		t.Errorf("originCreatedTime = %d, want the origin's CreatedTime", originCreatedTime)
 	}
 	if fetcher.diffusionCalls != 1 {
 		t.Errorf("fetcher.diffusionCalls = %d, want 1", fetcher.diffusionCalls)
@@ -568,41 +577,53 @@ func TestResolveDescription_RerunFetchesOriginBodyOnCacheMiss(t *testing.T) {
 	if store.originBodies["origin1"] != "**rich** origin body" {
 		t.Errorf("store.originBodies[origin1] = %q, want it cached", store.originBodies["origin1"])
 	}
+	if store.originCreatedTimes["origin1"] != 1704067200 {
+		t.Errorf("store.originCreatedTimes[origin1] = %d, want it cached", store.originCreatedTimes["origin1"])
+	}
 }
 
 func TestResolveDescription_RerunUsesCachedOriginBodyWithoutFetching(t *testing.T) {
 	store := newFakeStore()
 	store.originBodies["origin1"] = "cached origin body"
 	store.originStandfirsts["origin1"] = "cached origin standfirst"
+	store.originCreatedTimes["origin1"] = 1704067200
 	store.originBodySet["origin1"] = true
 	fetcher := &fakeFetcher{} // should not be called
 	r := NewResolver(store, fetcher, nil)
 
 	d := radiofrance.Diffusion{ID: "d1"}
 	d.Relationships.OriginDiffusion = []string{"origin1"}
-	body, sf := r.ResolveDescription(context.Background(), d)
+	body, sf, originCreatedTime := r.ResolveDescription(context.Background(), d)
 
 	if body != "cached origin body" || sf != "cached origin standfirst" {
 		t.Errorf("ResolveDescription = (%q, %q), want cached origin fields", body, sf)
+	}
+	if originCreatedTime != 1704067200 {
+		t.Errorf("originCreatedTime = %d, want the cached CreatedTime", originCreatedTime)
 	}
 	if fetcher.diffusionCalls != 0 {
 		t.Errorf("fetcher.diffusionCalls = %d, want 0 (cache hit)", fetcher.diffusionCalls)
 	}
 }
 
-func TestResolveDescription_RerunFallsBackToOwnFieldsWhenOriginBodyBlank(t *testing.T) {
+func TestResolveDescription_RerunFallsBackToOwnBodyButKeepsOriginCreatedTimeWhenOriginBodyBlank(t *testing.T) {
 	store := newFakeStore()
 	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
-		"origin1": {ID: "origin1", BodyMarkdown: ".", Standfirst: "."}, // placeholder, not real content
+		// placeholder body/standfirst, but a real CreatedTime - the origin
+		// diffusion itself was resolved fine, it just has no real notes.
+		"origin1": {ID: "origin1", BodyMarkdown: ".", Standfirst: ".", CreatedTime: 1704067200},
 	}}
 	r := NewResolver(store, fetcher, nil)
 
 	d := radiofrance.Diffusion{ID: "d1", BodyMarkdown: "own body", Standfirst: "own standfirst"}
 	d.Relationships.OriginDiffusion = []string{"origin1"}
-	body, sf := r.ResolveDescription(context.Background(), d)
+	body, sf, originCreatedTime := r.ResolveDescription(context.Background(), d)
 
 	if body != "own body" || sf != "own standfirst" {
 		t.Errorf("ResolveDescription = (%q, %q), want own fields (origin blank)", body, sf)
+	}
+	if originCreatedTime != 1704067200 {
+		t.Errorf("originCreatedTime = %d, want the origin's CreatedTime even though its body was blank", originCreatedTime)
 	}
 }
 
@@ -613,10 +634,13 @@ func TestResolveDescription_RerunFallsBackToOwnFieldsWhenOriginFetchFails(t *tes
 
 	d := radiofrance.Diffusion{ID: "d1", BodyMarkdown: "own body", Standfirst: "own standfirst"}
 	d.Relationships.OriginDiffusion = []string{"origin1"}
-	body, sf := r.ResolveDescription(context.Background(), d)
+	body, sf, originCreatedTime := r.ResolveDescription(context.Background(), d)
 
 	if body != "own body" || sf != "own standfirst" {
 		t.Errorf("ResolveDescription = (%q, %q), want own fields (fetch failed)", body, sf)
+	}
+	if originCreatedTime != 0 {
+		t.Errorf("originCreatedTime = %d, want 0 (origin unreachable)", originCreatedTime)
 	}
 	if _, ok := store.originBodySet["origin1"]; ok {
 		t.Error("did not expect a cache entry when the fetch failed")

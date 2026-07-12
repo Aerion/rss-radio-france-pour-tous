@@ -66,7 +66,7 @@ type ImageResolver interface {
 // here rather than importing episodecache directly for the same reason as
 // ManifestationResolver.
 type DescriptionResolver interface {
-	ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (bodyMarkdown, standfirst string)
+	ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (bodyMarkdown, standfirst string, originCreatedTime int64)
 }
 
 // Builder builds RSS feeds for shows.
@@ -156,6 +156,12 @@ type resolution struct {
 	imageURL        string
 	bodyMarkdown    string
 	standfirst      string
+	// originCreatedTime is the origin diffusion's own CreatedTime (its
+	// original broadcast date) as a Unix timestamp when d is a rerun whose
+	// origin could be resolved, or 0 otherwise - see
+	// DescriptionResolver.ResolveDescription. Used by buildItem to flag a
+	// rerun in its description.
+	originCreatedTime int64
 }
 
 // resolveAll resolves every diffusion's manifestation ID/URL/duration, cover
@@ -196,7 +202,7 @@ func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) 
 				res.imageURL = radiofrance.DiffusionImageURL(d)
 			}
 			if b.DescriptionResolver != nil {
-				res.bodyMarkdown, res.standfirst = b.DescriptionResolver.ResolveDescription(gctx, d)
+				res.bodyMarkdown, res.standfirst, res.originCreatedTime = b.DescriptionResolver.ResolveDescription(gctx, d)
 			} else {
 				res.bodyMarkdown, res.standfirst = d.BodyMarkdown, d.Standfirst
 			}
@@ -224,6 +230,9 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 			description = ""
 		}
 	} else {
+		if res.originCreatedTime > 0 {
+			description = rerunBanner(res.originCreatedTime) + description
+		}
 		description = renderMarkdown(description)
 	}
 
@@ -269,6 +278,17 @@ func isPlaceholder(s string) bool {
 	return strings.TrimFunc(s, func(r rune) bool {
 		return unicode.IsSpace(r) || r == '.'
 	}) == ""
+}
+
+// rerunBanner returns a small italic markdown line flagging a rerun
+// episode's original broadcast date, meant to be prepended to its
+// bodyMarkdown-derived description before rendering. Only applied on that
+// branch (not the standfirst fallback, which is used verbatim - see
+// isPlaceholder's caller in buildItem), so a rerun whose bodyMarkdown is
+// itself a placeholder won't carry this banner.
+func rerunBanner(originCreatedTime int64) string {
+	date := time.Unix(originCreatedTime, 0).UTC().Format("2006-01-02")
+	return fmt.Sprintf("*Rediffusion de l'épisode du %s*\n\n", date)
 }
 
 var (

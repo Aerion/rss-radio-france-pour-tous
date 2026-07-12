@@ -402,12 +402,13 @@ func TestBuild_FallsBackToDiffusionImageURLWhenNoImageResolver(t *testing.T) {
 // fakeDescriptionResolver is a stand-in for internal/episodecache.Resolver's
 // ResolveDescription method.
 type fakeDescriptionResolver struct {
-	bodyMarkdownByDiffusionID map[string]string
-	standfirstByDiffusionID   map[string]string
+	bodyMarkdownByDiffusionID      map[string]string
+	standfirstByDiffusionID        map[string]string
+	originCreatedTimeByDiffusionID map[string]int64
 }
 
-func (f fakeDescriptionResolver) ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (string, string) {
-	return f.bodyMarkdownByDiffusionID[d.ID], f.standfirstByDiffusionID[d.ID]
+func (f fakeDescriptionResolver) ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (string, string, int64) {
+	return f.bodyMarkdownByDiffusionID[d.ID], f.standfirstByDiffusionID[d.ID], f.originCreatedTimeByDiffusionID[d.ID]
 }
 
 func TestBuild_UsesDescriptionResolverWhenConfigured(t *testing.T) {
@@ -445,6 +446,49 @@ func TestBuild_FallsBackToOwnFieldsWhenNoDescriptionResolver(t *testing.T) {
 	}
 	if !strings.Contains(out, "own body") {
 		t.Errorf("expected the diffusion's own bodyMarkdown in output:\n%s", out)
+	}
+}
+
+func TestBuild_RerunDescriptionIncludesOriginBroadcastDateBanner(t *testing.T) {
+	b := Builder{
+		PublicBaseURL: testBuilder.PublicBaseURL,
+		DescriptionResolver: fakeDescriptionResolver{
+			bodyMarkdownByDiffusionID:      map[string]string{"d1": "The real notes."},
+			originCreatedTimeByDiffusionID: map[string]int64{"d1": 1704067200}, // 2024-01-01
+		},
+	}
+	d := diffusionWithManifestation("d1", 1700000000)
+
+	out, err := b.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	// encoding/xml escapes the rendered HTML into entities within
+	// <description> (see renderMarkdown's doc comment), so match the
+	// escaped form rather than raw "<em>".
+	if !strings.Contains(out, "&lt;em&gt;Rediffusion de l") || !strings.Contains(out, "2024-01-01") {
+		t.Errorf("expected an italic rerun banner with the origin broadcast date in output:\n%s", out)
+	}
+	if !strings.Contains(out, "The real notes.") {
+		t.Errorf("expected the resolved bodyMarkdown alongside the banner in output:\n%s", out)
+	}
+}
+
+func TestBuild_NoRerunBannerWhenOriginCreatedTimeZero(t *testing.T) {
+	b := Builder{
+		PublicBaseURL: testBuilder.PublicBaseURL,
+		DescriptionResolver: fakeDescriptionResolver{
+			bodyMarkdownByDiffusionID: map[string]string{"d1": "The real notes."},
+		},
+	}
+	d := diffusionWithManifestation("d1", 1700000000)
+
+	out, err := b.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if strings.Contains(out, "Rediffusion") {
+		t.Errorf("did not expect a rerun banner when originCreatedTime is 0:\n%s", out)
 	}
 }
 
