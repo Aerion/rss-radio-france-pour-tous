@@ -83,10 +83,13 @@ func TestResolve_PrefersPrincipalFromIncluded(t *testing.T) {
 		"m3": {URL: "https://cdn.example.com/m3.mp3", Duration: 92 * time.Second, Principal: false},
 	}
 
-	manifestationID, duration := r.Resolve(context.Background(), "show1", "Show One", d, included)
+	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, included)
 
 	if manifestationID != "m2" {
 		t.Errorf("manifestationID = %q, want m2 (the principal one)", manifestationID)
+	}
+	if url != "https://cdn.example.com/m2.mp3" {
+		t.Errorf("url = %q, want m2's URL", url)
 	}
 	if duration != 91*time.Second {
 		t.Errorf("duration = %v, want 91s", duration)
@@ -106,7 +109,7 @@ func TestResolve_FallsBackToCachedPrincipalWhenNotInIncluded(t *testing.T) {
 	store := newFakeStore()
 	store.entries["m2"] = Entry{
 		ManifestationID: "m2", Principal: true, DiffusionUpdatedTime: 100,
-		Duration: 91 * time.Second, FetchedAt: time.Now(),
+		URL: "https://cdn.example.com/m2-cached.mp3", Duration: 91 * time.Second, FetchedAt: time.Now(),
 	}
 	fetcher := &fakeFetcher{}
 	r := NewResolver(store, fetcher)
@@ -119,10 +122,13 @@ func TestResolve_FallsBackToCachedPrincipalWhenNotInIncluded(t *testing.T) {
 		"m3": {URL: "https://cdn.example.com/m3.mp3", Principal: false},
 	}
 
-	manifestationID, duration := r.Resolve(context.Background(), "show1", "Show One", d, included)
+	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, included)
 
 	if manifestationID != "m2" {
 		t.Errorf("manifestationID = %q, want m2 (cached principal)", manifestationID)
+	}
+	if url != "https://cdn.example.com/m2-cached.mp3" {
+		t.Errorf("url = %q, want the cached m2 URL", url)
 	}
 	if duration != 91*time.Second {
 		t.Errorf("duration = %v, want 91s", duration)
@@ -143,10 +149,13 @@ func TestResolve_FallsBackToLiveFetchStoppingAtFirstPrincipal(t *testing.T) {
 
 	// Nothing in included and nothing cached - must fetch live.
 	d := diffusionWithManifestations("d1", 100, "m1", "m2", "m3")
-	manifestationID, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
+	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
 
 	if manifestationID != "m2" {
 		t.Errorf("manifestationID = %q, want m2 (the principal one)", manifestationID)
+	}
+	if url != "https://cdn.example.com/m2.mp3" {
+		t.Errorf("url = %q, want m2's URL", url)
 	}
 	if duration != 20*time.Second {
 		t.Errorf("duration = %v, want 20s", duration)
@@ -170,10 +179,13 @@ func TestResolve_DegradesToFirstSuccessfulFetchWhenNoPrincipalFound(t *testing.T
 	r := NewResolver(store, fetcher)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2")
-	manifestationID, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
+	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
 
 	if manifestationID != "m1" {
 		t.Errorf("manifestationID = %q, want m1 (first successful fetch, none were principal)", manifestationID)
+	}
+	if url != "https://cdn.example.com/m1.mp3" {
+		t.Errorf("url = %q, want m1's URL", url)
 	}
 	if duration != 10*time.Second {
 		t.Errorf("duration = %v, want 10s", duration)
@@ -189,10 +201,13 @@ func TestResolve_DegradesToDefaultManifestationWhenEveryFetchFails(t *testing.T)
 	r := NewResolver(store, fetcher)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2")
-	manifestationID, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
+	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
 
 	if manifestationID != "m1" {
 		t.Errorf("manifestationID = %q, want m1 (d.ManifestationID() fallback)", manifestationID)
+	}
+	if url != "" {
+		t.Errorf("url = %q, want \"\" (nothing resolved, caller falls back to /audio/)", url)
 	}
 	if duration != 0 {
 		t.Errorf("duration = %v, want 0 (unknown)", duration)
@@ -213,10 +228,13 @@ func TestResolve_SkipsFailingCandidateAndTriesNext(t *testing.T) {
 	r := NewResolver(store, fetcher)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2")
-	manifestationID, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
+	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
 
 	if manifestationID != "m2" {
 		t.Errorf("manifestationID = %q, want m2 (m1 failed, m2 succeeded and is principal)", manifestationID)
+	}
+	if url != "https://cdn.example.com/m2.mp3" {
+		t.Errorf("url = %q, want m2's URL", url)
 	}
 	if duration != 20*time.Second {
 		t.Errorf("duration = %v, want 20s", duration)
@@ -227,10 +245,10 @@ func TestResolve_NoManifestationReturnsEmpty(t *testing.T) {
 	r := NewResolver(newFakeStore(), &fakeFetcher{})
 
 	d := radiofrance.Diffusion{ID: "d1"} // no Relationships.Manifestations
-	manifestationID, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
+	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
 
-	if manifestationID != "" || duration != 0 {
-		t.Errorf("got (%q, %v), want (\"\", 0)", manifestationID, duration)
+	if manifestationID != "" || url != "" || duration != 0 {
+		t.Errorf("got (%q, %q, %v), want (\"\", \"\", 0)", manifestationID, url, duration)
 	}
 }
 

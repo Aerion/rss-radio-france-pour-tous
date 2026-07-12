@@ -20,7 +20,11 @@ type API interface {
 // AudioResolver resolves a manifestation ID to its playable URL (and,
 // where known, which show it belongs to) for the /audio/ redirect -
 // typically backed by internal/episodecache, which consults a cache
-// before the Radio France API.
+// before the Radio France API. The route itself is legacy: feed
+// enclosures now embed the resolved playable URL directly (see
+// feed.ManifestationResolver), so /audio/ mainly still serves links
+// embedded in feeds fetched before that change, plus the rare item whose
+// URL couldn't be resolved at feed-build time.
 type AudioResolver interface {
 	ResolveAudioURL(ctx context.Context, manifestationID string) (url, showID, showTitle string, err error)
 }

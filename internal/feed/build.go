@@ -33,28 +33,33 @@ var guidCutoff = time.Date(2022, 9, 12, 0, 0, 0, 0, time.UTC)
 // concurrent Radio France requests.
 const resolveConcurrency = 8
 
-// ManifestationResolver looks up the manifestation ID and duration to use
-// for a diffusion's enclosure/itunes:duration - typically backed by
-// internal/episodecache, consulting a cache (and preferring the API's
-// Principal manifestation) before falling back to the Radio France API.
-// included is whatever manifestation data came back inline with the
-// diffusions page (see radiofrance.ShowDiffusions.Manifestations).
+// ManifestationResolver looks up the manifestation ID, playable URL, and
+// duration to use for a diffusion's enclosure/itunes:duration - typically
+// backed by internal/episodecache, consulting a cache (and preferring the
+// API's Principal manifestation) before falling back to the Radio France
+// API. included is whatever manifestation data came back inline with the
+// diffusions page (see radiofrance.ShowDiffusions.Manifestations). url is
+// "" if no playable URL could be resolved, in which case Build falls back
+// to the legacy /audio/ redirect for that item.
 // Declared here rather than importing episodecache directly so this
 // package doesn't need to know about caching/storage at all.
 type ManifestationResolver interface {
-	Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID string, duration time.Duration)
+	Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID, url string, duration time.Duration)
 }
 
 // Builder builds RSS feeds for shows.
 type Builder struct {
 	// PublicBaseURL is this app's own externally-visible base URL, used to
-	// build enclosure URLs that point back at our /audio/ redirect route.
+	// build the legacy /audio/ redirect URL for an item whose playable URL
+	// couldn't be resolved directly (see buildItem). New enclosures point
+	// straight at the resolved manifestation URL instead.
 	PublicBaseURL string
 
 	// Resolver is nil-able. When nil, Build falls back to using each
-	// diffusion's raw ManifestationID with no duration - the pre-Phase-4
-	// behavior - which keeps existing tests simple and gives every caller
-	// an escape hatch if caching is unavailable.
+	// diffusion's raw ManifestationID via the /audio/ redirect, with no
+	// duration - the pre-Phase-4 behavior - which keeps existing tests
+	// simple and gives every caller an escape hatch if caching is
+	// unavailable.
 	Resolver ManifestationResolver
 }
 
@@ -114,13 +119,14 @@ func (b Builder) Build(ctx context.Context, sd radiofrance.ShowDiffusions, nextP
 // resolution is what resolveAll produces per diffusion.
 type resolution struct {
 	manifestationID string
+	url             string
 	duration        time.Duration
 }
 
-// resolveAll resolves every diffusion's manifestation ID/duration
+// resolveAll resolves every diffusion's manifestation ID/URL/duration
 // concurrently (bounded by resolveConcurrency), keyed by diffusion ID. With
 // no Resolver configured, this is just each diffusion's raw
-// ManifestationID with no upstream calls at all.
+// ManifestationID with no upstream calls, no URL, at all.
 func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) map[string]resolution {
 	results := make(map[string]resolution, len(sd.Diffusions))
 
@@ -136,9 +142,9 @@ func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) 
 	g.SetLimit(resolveConcurrency)
 	for _, d := range sd.Diffusions {
 		g.Go(func() error {
-			manifestationID, duration := b.Resolver.Resolve(gctx, sd.ShowDetails.ID, sd.ShowDetails.Title, d, sd.Manifestations)
+			manifestationID, url, duration := b.Resolver.Resolve(gctx, sd.ShowDetails.ID, sd.ShowDetails.Title, d, sd.Manifestations)
 			mu.Lock()
-			results[d.ID] = resolution{manifestationID: manifestationID, duration: duration}
+			results[d.ID] = resolution{manifestationID: manifestationID, url: url, duration: duration}
 			mu.Unlock()
 			return nil
 		})
@@ -164,13 +170,23 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 		description = renderMarkdown(description)
 	}
 
+	audioURL := res.url
+	if audioURL == "" {
+		// The resolver couldn't produce a direct playable URL (no Resolver
+		// configured, or every candidate manifestation failed to resolve) -
+		// fall back to the legacy /audio/ redirect, which gets its own shot
+		// at resolving the URL (cache or live fetch) when a listener
+		// actually plays the episode.
+		audioURL = fmt.Sprintf("%s/audio/%s", b.PublicBaseURL, manifestationID)
+	}
+
 	it := item{
 		Title:       sanitizeXMLText(d.Title),
 		GUID:        guid(d, manifestationID),
 		Link:        sanitizeXMLText(d.Path),
 		Description: sanitizeXMLText(description),
 		Enclosure: enclosure{
-			URL:  fmt.Sprintf("%s/audio/%s", b.PublicBaseURL, manifestationID),
+			URL:  audioURL,
 			Type: "audio/mpeg",
 		},
 		PubDate: time.Unix(d.CreatedTime, 0).UTC().Format(http.TimeFormat),

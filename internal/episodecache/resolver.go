@@ -39,10 +39,13 @@ func NewResolver(s store, f fetcher) *Resolver {
 	return &Resolver{store: s, fetcher: f}
 }
 
-// Resolve returns the manifestation ID and duration to use for d's
-// enclosure/itunes:duration, used while building a show's feed. included is
-// whatever manifestation data came back inline with the diffusions page
-// (see radiofrance.ShowDiffusions.Manifestations) - not exhaustive.
+// Resolve returns the manifestation ID, playable URL, and duration to use
+// for d's enclosure/itunes:duration, used while building a show's feed.
+// included is whatever manifestation data came back inline with the
+// diffusions page (see radiofrance.ShowDiffusions.Manifestations) - not
+// exhaustive. url is "" only when every candidate manifestation failed to
+// resolve, in which case the caller falls back to the legacy /audio/
+// redirect for this item.
 //
 // Prefers the manifestation flagged Principal by the API over d's default
 // (array position 0): live samples show non-principal manifestations carry
@@ -52,27 +55,27 @@ func NewResolver(s store, f fetcher) *Resolver {
 // included - free; (2) principal already cached from a previous
 // resolution - free; (3) live-fetch whichever siblings aren't already
 // known, stopping at the first principal found. Only degrades to d's
-// default manifestation (with no known duration) if every candidate
+// default manifestation (with no known URL or duration) if every candidate
 // failed to fetch, which should be rare.
 //
 // Never returns an error to the caller: any upstream failure is logged and
 // degrades gracefully, so one bad episode never fails the whole feed.
-func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID string, duration time.Duration) {
+func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID, url string, duration time.Duration) {
 	candidates := d.Relationships.Manifestations
 	if len(candidates) == 0 {
-		return "", 0
+		return "", "", 0
 	}
 
 	if id, m, ok := findPrincipal(candidates, included); ok {
 		r.cache(ctx, id, d, showID, showTitle, m)
-		return id, m.Duration
+		return id, m.URL, m.Duration
 	}
 
 	if id, e, ok := r.findCachedPrincipal(ctx, candidates, d.UpdatedTime); ok {
-		return id, e.Duration
+		return id, e.URL, e.Duration
 	}
 
-	fallbackID, fallbackDuration := "", time.Duration(0)
+	fallbackID, fallbackURL, fallbackDuration := "", "", time.Duration(0)
 	for _, id := range candidates {
 		if _, known := included[id]; known {
 			continue // already checked above, wasn't principal
@@ -84,19 +87,19 @@ func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radi
 		}
 		r.cache(ctx, id, d, showID, showTitle, details)
 		if details.Principal {
-			return id, details.Duration
+			return id, details.URL, details.Duration
 		}
 		if fallbackID == "" {
-			fallbackID, fallbackDuration = id, details.Duration
+			fallbackID, fallbackURL, fallbackDuration = id, details.URL, details.Duration
 		}
 	}
 	if fallbackID != "" {
-		return fallbackID, fallbackDuration
+		return fallbackID, fallbackURL, fallbackDuration
 	}
 
 	slog.Warn("episodecache: no candidate manifestation could be resolved, feed item will have no duration",
 		"diffusionID", d.ID)
-	return d.ManifestationID(), 0
+	return d.ManifestationID(), "", 0
 }
 
 // findPrincipal returns the first of candidates flagged Principal in

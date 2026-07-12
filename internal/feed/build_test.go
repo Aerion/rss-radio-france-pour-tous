@@ -341,13 +341,14 @@ func TestGUID_BackwardCompatibilityCutoff(t *testing.T) {
 }
 
 // fakeResolver is a stand-in for internal/episodecache.Resolver, letting
-// these tests exercise duration rendering without a real cache/API.
+// these tests exercise duration/URL rendering without a real cache/API.
 type fakeResolver struct {
 	durationsByDiffusionID map[string]time.Duration
+	urlsByDiffusionID      map[string]string
 }
 
-func (f fakeResolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (string, time.Duration) {
-	return d.ManifestationID(), f.durationsByDiffusionID[d.ID]
+func (f fakeResolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (string, string, time.Duration) {
+	return d.ManifestationID(), f.urlsByDiffusionID[d.ID], f.durationsByDiffusionID[d.ID]
 }
 
 func TestBuild_IncludesDurationWhenResolverProvidesIt(t *testing.T) {
@@ -375,6 +376,37 @@ func TestBuild_OmitsDurationWhenUnresolved(t *testing.T) {
 	}
 	if strings.Contains(out, "itunes:duration") {
 		t.Errorf("did not expect an itunes:duration element:\n%s", out)
+	}
+}
+
+func TestBuild_EnclosureUsesResolvedURLDirectly(t *testing.T) {
+	b := Builder{
+		PublicBaseURL: testBuilder.PublicBaseURL,
+		Resolver:      fakeResolver{urlsByDiffusionID: map[string]string{"d1": "https://media.radiofrance-podcast.net/d1.mp3"}},
+	}
+	diffusions := []radiofrance.Diffusion{diffusionWithManifestation("d1", 1700000000)}
+
+	out, err := b.Build(context.Background(), sd(diffusions, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(out, `url="https://media.radiofrance-podcast.net/d1.mp3"`) {
+		t.Errorf("expected enclosure to use the resolver's URL directly:\n%s", out)
+	}
+	if strings.Contains(out, "/audio/") {
+		t.Errorf("did not expect the legacy /audio/ redirect when the resolver provides a URL:\n%s", out)
+	}
+}
+
+func TestBuild_EnclosureFallsBackToLegacyAudioRouteWhenURLUnresolved(t *testing.T) {
+	diffusions := []radiofrance.Diffusion{diffusionWithManifestation("d1", 1700000000)}
+	// testBuilder has no Resolver configured, so no URL is ever resolved.
+	out, err := testBuilder.Build(context.Background(), sd(diffusions, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(out, "https://radio-france-rss.example.com/audio/manifestation-d1") {
+		t.Errorf("expected enclosure to fall back to the legacy /audio/ redirect:\n%s", out)
 	}
 }
 
