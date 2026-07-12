@@ -2,6 +2,7 @@
 package feed
 
 import (
+	"bytes"
 	"context"
 	"encoding/xml"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/yuin/goldmark"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
@@ -158,6 +160,8 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 		if isPlaceholder(description) {
 			description = ""
 		}
+	} else {
+		description = renderMarkdown(description)
 	}
 
 	it := item{
@@ -213,6 +217,21 @@ func stripShortcodes(s string) string {
 	s = multiSpacePattern.ReplaceAllString(s, " ")
 	s = multiNewlinePattern.ReplaceAllString(s, "\n\n")
 	return strings.TrimSpace(s)
+}
+
+// renderMarkdown converts bodyMarkdown to HTML so podcast apps render its
+// formatting (bold, links, lists, ...) instead of showing raw markdown
+// syntax. The resulting tags go into item.Description as ordinary text, so
+// encoding/xml escapes them into entities on Marshal (e.g. "&lt;p&gt;") -
+// the standard way feed readers carry HTML inside <description>, which they
+// unescape and render themselves. On a render error, s is used unchanged so
+// a malformed body degrades to plain text rather than dropping the episode.
+func renderMarkdown(s string) string {
+	var buf bytes.Buffer
+	if err := goldmark.Convert([]byte(s), &buf); err != nil {
+		return s
+	}
+	return strings.TrimSpace(buf.String())
 }
 
 // formatItunesDuration renders d as HH:MM:SS, the conventional

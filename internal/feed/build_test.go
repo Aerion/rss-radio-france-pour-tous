@@ -132,10 +132,10 @@ func TestBuild_DescriptionFallback(t *testing.T) {
 		bodyMarkdown string
 		want         string
 	}{
-		"real bodyMarkdown used as-is, standfirst ignored": {
+		"real bodyMarkdown rendered as HTML, standfirst ignored": {
 			standfirst:   "A real teaser",
 			bodyMarkdown: "Long form notes follow here.",
-			want:         "Long form notes follow here.",
+			want:         "<p>Long form notes follow here.</p>",
 		},
 		"placeholder bodyMarkdown (period) falls back to standfirst": {
 			standfirst:   "A real teaser",
@@ -160,10 +160,10 @@ func TestBuild_DescriptionFallback(t *testing.T) {
 			standfirst: "", bodyMarkdown: "",
 			want: "",
 		},
-		"bodyMarkdown strips shortcodes": {
+		"bodyMarkdown strips shortcodes and renders as HTML": {
 			standfirst:   "ignored",
 			bodyMarkdown: "Des espions et des livres.\n\n{% bounce 1 abc123 %22title%22 %}\n\nLa suite.",
-			want:         "Des espions et des livres.\n\nLa suite.",
+			want:         "<p>Des espions et des livres.</p>\n<p>La suite.</p>",
 		},
 		"standfirst fallback used verbatim, shortcodes not stripped": {
 			standfirst:   "A teaser with {% something %} inside",
