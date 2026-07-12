@@ -3,6 +3,7 @@ package radiofrance
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -32,7 +33,9 @@ func TestDoGet_SetsRequiredHeaders(t *testing.T) {
 
 func TestDoGet_ErrorStatus(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Ray-Id", "abc123")
 		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte(`{"error":"rate limited"}`))
 	})
 
 	err := client.doGet(context.Background(), "test-endpoint", "anything", &struct{}{})
@@ -45,5 +48,14 @@ func TestDoGet_ErrorStatus(t *testing.T) {
 	}
 	if apiErr.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("StatusCode = %d, want %d", apiErr.StatusCode, http.StatusServiceUnavailable)
+	}
+	if apiErr.Body != `{"error":"rate limited"}` {
+		t.Errorf("Body = %q", apiErr.Body)
+	}
+	if got := apiErr.Header.Get("X-Ray-Id"); got != "abc123" {
+		t.Errorf("Header[X-Ray-Id] = %q", got)
+	}
+	if !strings.Contains(apiErr.Error(), "rate limited") {
+		t.Errorf("Error() = %q, want it to include the response body", apiErr.Error())
 	}
 }

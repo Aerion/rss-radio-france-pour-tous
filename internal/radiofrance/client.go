@@ -7,11 +7,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
 
 const defaultBaseURL = "https://api.radiofrance.fr/v1/"
+
+// maxErrorBodySize caps how much of a non-2xx response body APIError
+// captures, so an unexpected large error page (e.g. an HTML WAF block page)
+// can't bloat logs.
+const maxErrorBodySize = 4 << 10
 
 // RequestObserver receives timing/outcome for each outbound Radio France
 // API call. Defined here rather than in a metrics package so this package
@@ -48,14 +54,18 @@ func NewClient(httpClient *http.Client, token string, observer RequestObserver) 
 }
 
 // APIError is returned when the Radio France API responds with a non-2xx
-// status.
+// status. Header and Body carry the actual response so it shows up in logs
+// - Radio France's error pages usually explain the failure (rate limiting,
+// WAF block, etc.) better than the status code alone.
 type APIError struct {
 	StatusCode int
 	Path       string
+	Header     http.Header
+	Body       string
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("radio france API error: %d (%s)", e.StatusCode, e.Path)
+	return fmt.Sprintf("radio france API error: %d (%s): headers=%v body=%q", e.StatusCode, e.Path, e.Header, e.Body)
 }
 
 // doGet fetches path and decodes the JSON response into out. endpoint is a
@@ -86,7 +96,8 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &APIError{StatusCode: resp.StatusCode, Path: path}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodySize))
+		return &APIError{StatusCode: resp.StatusCode, Path: path, Header: resp.Header, Body: string(body)}
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
