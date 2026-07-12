@@ -178,7 +178,7 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 	if res.duration > 0 {
 		it.Duration = formatItunesDuration(res.duration)
 	}
-	if imgURL := radiofrance.ImageURL(d.Visuals, d.MainImage); imgURL != "" {
+	if imgURL := radiofrance.DiffusionImageURL(d); imgURL != "" {
 		it.Image = &itunesImage{Href: imgURL}
 	}
 	return it, true

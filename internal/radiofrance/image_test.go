@@ -51,3 +51,34 @@ func TestImageURL_FallsBackToFirstVisual(t *testing.T) {
 		t.Errorf("ImageURL = %q, want it to contain uuid-first", got)
 	}
 }
+
+func TestDiffusionImageURL_PrefersMainImageOverVisuals(t *testing.T) {
+	// Regression test: a diffusion's own Visuals often just carry the
+	// enclosing season/show's shared square_banner (identical across every
+	// episode in that season), while MainImage is the actual per-episode
+	// artwork. DiffusionImageURL must prefer MainImage in that case.
+	d := Diffusion{
+		MainImage: "uuid-episode",
+		Visuals:   []Visual{{Name: "square_banner", VisualUUID: "uuid-season-banner"}},
+	}
+	got := DiffusionImageURL(d)
+	if !strings.Contains(got, "uuid-episode") {
+		t.Errorf("DiffusionImageURL = %q, want it to contain uuid-episode", got)
+	}
+}
+
+func TestDiffusionImageURL_FallsBackToVisualsWhenNoMainImage(t *testing.T) {
+	d := Diffusion{
+		Visuals: []Visual{{Name: "square_banner", VisualUUID: "uuid-season-banner"}},
+	}
+	got := DiffusionImageURL(d)
+	if !strings.Contains(got, "uuid-season-banner") {
+		t.Errorf("DiffusionImageURL = %q, want it to contain uuid-season-banner", got)
+	}
+}
+
+func TestDiffusionImageURL_EmptyWhenNeitherAvailable(t *testing.T) {
+	if got := DiffusionImageURL(Diffusion{}); got != "" {
+		t.Errorf("DiffusionImageURL(Diffusion{}) = %q, want \"\"", got)
+	}
+}
