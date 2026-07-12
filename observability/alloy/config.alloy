@@ -8,26 +8,29 @@ discovery.docker "containers" {
   refresh_interval = "5s"
 }
 
-loki.source.docker "containers" {
-  host    = "unix:///var/run/docker.sock"
+discovery.relabel "containers" {
   targets = discovery.docker.containers.targets
-  labels  = {"job" = "docker"}
 
-  relabel_rules {
-    rule {
-      source_labels = ["__meta_docker_container_name"]
-      regex         = "/(.*)"
-      target_label  = "container"
-    }
-    rule {
-      source_labels = ["__meta_docker_container_log_stream"]
-      target_label  = "stream"
-    }
-    rule {
-      source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
-      target_label  = "service"
-    }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
   }
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  labels        = {"job" = "docker"}
+  relabel_rules = discovery.relabel.containers.rules
 
   forward_to = [loki.write.default.receiver]
 }
