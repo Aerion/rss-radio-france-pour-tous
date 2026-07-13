@@ -44,6 +44,13 @@ type Observability struct {
 	analyticsEvents metric.Int64Counter
 
 	manifestationCacheLookups metric.Int64Counter
+
+	feedCacheLookups metric.Int64Counter
+	feedCacheEntries metric.Int64UpDownCounter
+
+	enrichmentQueueEnqueued metric.Int64Counter
+	enrichmentQueueDepth    metric.Int64UpDownCounter
+	enrichmentJobsProcessed metric.Int64Counter
 }
 
 // New sets up the Prometheus metric provider for serviceName.
@@ -102,6 +109,31 @@ func New(serviceName string) (*Observability, error) {
 	if err != nil {
 		return nil, err
 	}
+	feedCacheLookups, err := meter.Int64Counter("feed_cache_lookups_total",
+		metric.WithDescription("Rendered-feed cache lookups, labeled by outcome (hit/miss)."))
+	if err != nil {
+		return nil, err
+	}
+	feedCacheEntries, err := meter.Int64UpDownCounter("feed_cache_entries",
+		metric.WithDescription("Current number of rendered feed pages held in the feed cache."))
+	if err != nil {
+		return nil, err
+	}
+	enrichmentQueueEnqueued, err := meter.Int64Counter("enrichment_queue_enqueued_total",
+		metric.WithDescription("Episode enrichment jobs offered to the queue, labeled by outcome (queued/duplicate/dropped)."))
+	if err != nil {
+		return nil, err
+	}
+	enrichmentQueueDepth, err := meter.Int64UpDownCounter("enrichment_queue_depth",
+		metric.WithDescription("Current number of episode enrichment jobs waiting in the queue."))
+	if err != nil {
+		return nil, err
+	}
+	enrichmentJobsProcessed, err := meter.Int64Counter("enrichment_jobs_processed_total",
+		metric.WithDescription("Episode enrichment jobs processed by a worker, labeled by kind (manifestation/origin) and outcome (succeeded/failed)."))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Observability{
 		promRegistry:               promRegistry,
@@ -113,6 +145,11 @@ func New(serviceName string) (*Observability, error) {
 		radioFranceDuration:        radioFranceDuration,
 		analyticsEvents:            analyticsEvents,
 		manifestationCacheLookups:  manifestationCacheLookups,
+		feedCacheLookups:           feedCacheLookups,
+		feedCacheEntries:           feedCacheEntries,
+		enrichmentQueueEnqueued:    enrichmentQueueEnqueued,
+		enrichmentQueueDepth:       enrichmentQueueDepth,
+		enrichmentJobsProcessed:    enrichmentJobsProcessed,
 	}, nil
 }
 
@@ -155,4 +192,33 @@ func (o *Observability) ObserveAnalyticsEvent(outcome string) {
 // ObserveCacheLookup implements episodecache.CacheObserver.
 func (o *Observability) ObserveCacheLookup(ctx context.Context, outcome string) {
 	o.manifestationCacheLookups.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+}
+
+// ObserveFeedCacheLookup implements feedcache.Observer.
+func (o *Observability) ObserveFeedCacheLookup(ctx context.Context, outcome string) {
+	o.feedCacheLookups.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+}
+
+// AdjustFeedCacheEntries implements feedcache.Observer. delta is positive
+// when an entry is added and negative when one is evicted/invalidated.
+func (o *Observability) AdjustFeedCacheEntries(ctx context.Context, delta int64) {
+	o.feedCacheEntries.Add(ctx, delta)
+}
+
+// ObserveEnrichmentEnqueued implements episodecache.EnrichmentObserver.
+func (o *Observability) ObserveEnrichmentEnqueued(ctx context.Context, outcome string) {
+	o.enrichmentQueueEnqueued.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+}
+
+// AdjustEnrichmentQueueDepth implements episodecache.EnrichmentObserver.
+// delta is positive when a job is queued and negative once a worker
+// finishes it.
+func (o *Observability) AdjustEnrichmentQueueDepth(ctx context.Context, delta int64) {
+	o.enrichmentQueueDepth.Add(ctx, delta)
+}
+
+// ObserveEnrichmentJob implements episodecache.EnrichmentObserver.
+func (o *Observability) ObserveEnrichmentJob(ctx context.Context, kind, outcome string) {
+	o.enrichmentJobsProcessed.Add(ctx, 1, metric.WithAttributes(
+		attribute.String("kind", kind), attribute.String("outcome", outcome)))
 }

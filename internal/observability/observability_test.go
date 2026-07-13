@@ -84,6 +84,79 @@ func TestObserveRequestStarted_RecordsRadioFranceMetric(t *testing.T) {
 	}
 }
 
+func TestObserveFeedCacheLookup_RecordsOutcome(t *testing.T) {
+	o := newTestObservability(t)
+	ctx := context.Background()
+	o.ObserveFeedCacheLookup(ctx, "hit")
+	o.ObserveFeedCacheLookup(ctx, "miss")
+	o.ObserveFeedCacheLookup(ctx, "miss")
+
+	body := scrapeMetrics(t, o)
+	if !strings.Contains(body, `feed_cache_lookups_total{outcome="hit"} 1`) {
+		t.Errorf("expected a hit=1 counter, got:\n%s", body)
+	}
+	if !strings.Contains(body, `feed_cache_lookups_total{outcome="miss"} 2`) {
+		t.Errorf("expected a miss=2 counter, got:\n%s", body)
+	}
+}
+
+func TestAdjustFeedCacheEntries_TracksCurrentCount(t *testing.T) {
+	o := newTestObservability(t)
+	ctx := context.Background()
+	o.AdjustFeedCacheEntries(ctx, 1)
+	o.AdjustFeedCacheEntries(ctx, 1)
+	o.AdjustFeedCacheEntries(ctx, -1)
+
+	body := scrapeMetrics(t, o)
+	if !strings.Contains(body, "feed_cache_entries 1") {
+		t.Errorf("expected feed_cache_entries = 1, got:\n%s", body)
+	}
+}
+
+func TestObserveEnrichmentEnqueued_RecordsOutcome(t *testing.T) {
+	o := newTestObservability(t)
+	ctx := context.Background()
+	o.ObserveEnrichmentEnqueued(ctx, "queued")
+	o.ObserveEnrichmentEnqueued(ctx, "duplicate")
+	o.ObserveEnrichmentEnqueued(ctx, "dropped")
+
+	body := scrapeMetrics(t, o)
+	for _, outcome := range []string{"queued", "duplicate", "dropped"} {
+		if !strings.Contains(body, `enrichment_queue_enqueued_total{outcome="`+outcome+`"} 1`) {
+			t.Errorf("expected a %s=1 counter, got:\n%s", outcome, body)
+		}
+	}
+}
+
+func TestAdjustEnrichmentQueueDepth_TracksCurrentDepth(t *testing.T) {
+	o := newTestObservability(t)
+	ctx := context.Background()
+	o.AdjustEnrichmentQueueDepth(ctx, 1)
+	o.AdjustEnrichmentQueueDepth(ctx, 1)
+	o.AdjustEnrichmentQueueDepth(ctx, 1)
+	o.AdjustEnrichmentQueueDepth(ctx, -1)
+
+	body := scrapeMetrics(t, o)
+	if !strings.Contains(body, "enrichment_queue_depth 2") {
+		t.Errorf("expected enrichment_queue_depth = 2, got:\n%s", body)
+	}
+}
+
+func TestObserveEnrichmentJob_RecordsKindAndOutcome(t *testing.T) {
+	o := newTestObservability(t)
+	ctx := context.Background()
+	o.ObserveEnrichmentJob(ctx, "manifestation", "succeeded")
+	o.ObserveEnrichmentJob(ctx, "origin", "failed")
+
+	body := scrapeMetrics(t, o)
+	if !strings.Contains(body, `enrichment_jobs_processed_total{kind="manifestation",outcome="succeeded"} 1`) {
+		t.Errorf("expected a manifestation/succeeded=1 counter, got:\n%s", body)
+	}
+	if !strings.Contains(body, `enrichment_jobs_processed_total{kind="origin",outcome="failed"} 1`) {
+		t.Errorf("expected an origin/failed=1 counter, got:\n%s", body)
+	}
+}
+
 func TestObserveAnalyticsEvent_RecordsOutcome(t *testing.T) {
 	o := newTestObservability(t)
 	o.ObserveAnalyticsEvent("written")
