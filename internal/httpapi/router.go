@@ -41,6 +41,20 @@ type EnrichmentStatus interface {
 	AllResolved(diffusions []radiofrance.Diffusion) bool
 }
 
+// ShowObserver records that an /rss/ request resolved to a given show, for
+// a per-show request-rate metric. show_id is deliberately its own metric
+// label rather than folded into the low-cardinality "route" label used
+// elsewhere (see Instrumenter/observability.Wrap) - the number of distinct
+// Radio France shows is small and stable enough that a label per show is
+// fine; the friendly title is looked up separately (see the shows table,
+// populated by internal/analytics.Writer) rather than carried here, to keep
+// this metric's cardinality and this interface minimal. Defined here rather
+// than in a metrics package so this package depends only on the narrow
+// interface it needs; observability.Observability implements it.
+type ShowObserver interface {
+	ObserveShowRequest(ctx context.Context, showID string)
+}
+
 // Server holds the dependencies shared by all HTTP handlers.
 type Server struct {
 	api               API
@@ -48,22 +62,25 @@ type Server struct {
 	audioResolver     AudioResolver
 	feedCache         *feedcache.Cache
 	enrichmentStatus  EnrichmentStatus
+	showObserver      ShowObserver
 	publicBaseURL     string
 	blockedUserAgents []string
 }
 
 // NewServer builds a Server. publicBaseURL is this app's own externally
 // visible base URL (e.g. "https://rss.example.com"), used to build
-// self-referencing links in the feed and search results. blockedUserAgents
-// is a lowercased list of substrings (see config.Config.BlockedUserAgents);
+// self-referencing links in the feed and search results. showObserver may
+// be nil to skip the per-show request metric. blockedUserAgents is a
+// lowercased list of substrings (see config.Config.BlockedUserAgents);
 // requests to feed-serving routes with a matching User-Agent get a 403.
-func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, imageResolver feed.ImageResolver, descriptionResolver feed.DescriptionResolver, audioResolver AudioResolver, feedCache *feedcache.Cache, enrichmentStatus EnrichmentStatus, blockedUserAgents []string) *Server {
+func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, imageResolver feed.ImageResolver, descriptionResolver feed.DescriptionResolver, audioResolver AudioResolver, feedCache *feedcache.Cache, enrichmentStatus EnrichmentStatus, showObserver ShowObserver, blockedUserAgents []string) *Server {
 	return &Server{
 		api:               api,
 		feedBuilder:       feed.Builder{PublicBaseURL: publicBaseURL, Resolver: manifestationResolver, ImageResolver: imageResolver, DescriptionResolver: descriptionResolver},
 		audioResolver:     audioResolver,
 		feedCache:         feedCache,
 		enrichmentStatus:  enrichmentStatus,
+		showObserver:      showObserver,
 		publicBaseURL:     publicBaseURL,
 		blockedUserAgents: blockedUserAgents,
 	}

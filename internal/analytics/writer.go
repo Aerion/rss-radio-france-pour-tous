@@ -66,6 +66,11 @@ func NewWriter(pool *pgxpool.Pool, metrics MetricsRecorder, bufferSize, workers 
 func (w *Writer) worker() {
 	for e := range w.events {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+		if e.showID != "" && e.showTitle != "" {
+			w.upsertShow(ctx, e.showID, e.showTitle)
+		}
+
 		_, err := w.pool.Exec(ctx, `
 			INSERT INTO request_log (route, show_id, show_title, method, status, user_agent)
 			VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -78,6 +83,22 @@ func (w *Writer) worker() {
 			continue
 		}
 		w.observe(outcomeWritten)
+	}
+}
+
+// upsertShow keeps the shows table (show_id -> title) current, so it can be
+// joined against show_id-labeled Prometheus metrics (see
+// observability.Observability.ObserveShowRequest) or used from Grafana's
+// Postgres datasource, without duplicating the title on every request_log
+// row. Best-effort: a failure here doesn't affect the request_log write.
+func (w *Writer) upsertShow(ctx context.Context, showID, title string) {
+	_, err := w.pool.Exec(ctx, `
+		INSERT INTO shows (show_id, title, updated_at)
+		VALUES ($1, $2, now())
+		ON CONFLICT (show_id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at`,
+		showID, title)
+	if err != nil {
+		slog.Error("shows upsert failed", "error", err)
 	}
 }
 

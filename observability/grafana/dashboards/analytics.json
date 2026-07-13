@@ -52,6 +52,42 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 6,
+      "title": "Live request rate by show (last 5m)",
+      "description": "Real-time counterpart to \"RSS requests per show\" above: current rate() from the show_feed_requests_total Prometheus metric, joined on show_id against the shows table (Postgres) for the friendly title.",
+      "type": "table",
+      "datasource": { "type": "datasource", "uid": "-- Mixed --" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "format": "table",
+          "instant": true,
+          "expr": "topk(15, sum by (show_id) (rate(show_feed_requests_total[5m])))",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT show_id, title FROM shows",
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": { "byField": "show_id", "mode": "outer" }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "show_id": false },
+            "renameByName": { "Value": "Requests/sec", "title": "Show" }
+          }
+        }
+      ]
     }
   ]
 }

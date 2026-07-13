@@ -51,6 +51,8 @@ type Observability struct {
 	enrichmentQueueEnqueued metric.Int64Counter
 	enrichmentQueueDepth    metric.Int64UpDownCounter
 	enrichmentJobsProcessed metric.Int64Counter
+
+	showRequests metric.Int64Counter
 }
 
 // New sets up the Prometheus metric provider for serviceName.
@@ -134,6 +136,11 @@ func New(serviceName string) (*Observability, error) {
 	if err != nil {
 		return nil, err
 	}
+	showRequests, err := meter.Int64Counter("show_feed_requests_total",
+		metric.WithDescription("Total /rss feed requests, labeled by show_id - cardinality is bounded by the number of Radio France shows, unlike the low-cardinality route label on http_requests_total. Join on show_id against the shows table (Postgres) for a friendly display name."))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Observability{
 		promRegistry:               promRegistry,
@@ -150,6 +157,7 @@ func New(serviceName string) (*Observability, error) {
 		enrichmentQueueEnqueued:    enrichmentQueueEnqueued,
 		enrichmentQueueDepth:       enrichmentQueueDepth,
 		enrichmentJobsProcessed:    enrichmentJobsProcessed,
+		showRequests:               showRequests,
 	}, nil
 }
 
@@ -221,4 +229,9 @@ func (o *Observability) AdjustEnrichmentQueueDepth(ctx context.Context, delta in
 func (o *Observability) ObserveEnrichmentJob(ctx context.Context, kind, outcome string) {
 	o.enrichmentJobsProcessed.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("kind", kind), attribute.String("outcome", outcome)))
+}
+
+// ObserveShowRequest implements httpapi.ShowObserver.
+func (o *Observability) ObserveShowRequest(ctx context.Context, showID string) {
+	o.showRequests.Add(ctx, 1, metric.WithAttributes(attribute.String("show_id", showID)))
 }

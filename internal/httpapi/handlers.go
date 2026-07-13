@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -59,6 +60,16 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 	return json.NewEncoder(w).Encode(out)
 }
 
+// observeShow records the show an /rss/ request resolved to, both for the
+// analytics event Writer.Wrap eventually inserts (see analytics.WithShow)
+// and, if configured, the show_feed_requests_total metric.
+func (s *Server) observeShow(ctx context.Context, showID, showTitle string) {
+	analytics.WithShow(ctx, showID, showTitle)
+	if s.showObserver != nil {
+		s.showObserver.ObserveShowRequest(ctx, showID)
+	}
+}
+
 func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 	showID := r.PathValue("showId")
 
@@ -78,7 +89,7 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		// until then: invalidate it now and fall through to rebuild,
 		// this time fully enriched.
 		if !entry.HadDegraded || !s.enrichmentStatus.AllResolved(entry.Diffusions) {
-			analytics.WithShow(r.Context(), entry.ShowID, entry.ShowTitle)
+			s.observeShow(r.Context(), entry.ShowID, entry.ShowTitle)
 			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 			_, err := fmt.Fprint(w, entry.Body)
 			return err
@@ -90,7 +101,7 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	analytics.WithShow(r.Context(), showID, showDiffusions.ShowDetails.Title)
+	s.observeShow(r.Context(), showID, showDiffusions.ShowDetails.Title)
 
 	var nextPageURL string
 	if showDiffusions.NextPageIdx != nil {

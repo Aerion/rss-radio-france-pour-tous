@@ -80,7 +80,7 @@ func run() error {
 	feedCache := feedcache.New(cfg.FeedCacheTTL, obs)
 	go feedCache.Sweep(ctx, cfg.FeedCacheSweepInterval)
 
-	server := httpapi.NewServer(client, cfg.PublicBaseURL, episodeCache, episodeCache, episodeCache, episodeCache, feedCache, episodeCache, cfg.BlockedUserAgents)
+	server := httpapi.NewServer(client, cfg.PublicBaseURL, episodeCache, episodeCache, episodeCache, episodeCache, feedCache, episodeCache, obs, cfg.BlockedUserAgents)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", server.Routes(obs, analyticsWriter))
