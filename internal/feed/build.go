@@ -431,8 +431,18 @@ func guid(d radiofrance.Diffusion, manifestationID string) string {
 // covers this well enough: it excludes controls, surrogates, and
 // unassigned/private-use code points, which is what we actually need to
 // worry about here.
+//
+// It also folds U+202F (NARROW NO-BREAK SPACE) to a plain space: Radio
+// France's editorial titles insert it before punctuation per French
+// typography convention, but it's rare enough that some renderers (e.g.
+// Firefox's title bar) have no glyph for it and show a substitution
+// character instead. It's valid XML/graphic, so IsGraphic alone wouldn't
+// touch it.
 func sanitizeXMLText(s string) string {
 	return strings.Map(func(r rune) rune {
+		if r == '\u202f' {
+			return ' '
+		}
 		if r == '\t' || r == '\n' || r == '\r' || unicode.IsGraphic(r) {
 			return r
 		}

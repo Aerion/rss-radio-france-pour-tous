@@ -14,10 +14,12 @@ var testBuilder = Builder{PublicBaseURL: "https://radio-france-rss.example.com"}
 
 func TestSanitizeXMLText(t *testing.T) {
 	cases := map[string]struct{ in, want string }{
-		"plain text unchanged":        {"hello world", "hello world"},
-		"unicode preserved":           {"café LGBT+", "café LGBT+"},
-		"tab, newline, CR preserved":  {"a\tb\nc\rd", "a\tb\nc\rd"},
-		"control characters stripped": {"a\x0Bb\x00c\x7Fd", "abcd"},
+		"plain text unchanged":             {"hello world", "hello world"},
+		"unicode preserved":                {"café LGBT+", "café LGBT+"},
+		"tab, newline, CR preserved":       {"a\tb\nc\rd", "a\tb\nc\rd"},
+		"control characters stripped":      {"a\x0Bb\x00c\x7Fd", "abcd"},
+		"narrow no-break space normalized": {"Warhol\u00a0?\u202f", "Warhol\u00a0? "},
+		"regular no-break space preserved": {"a\u00a0b", "a\u00a0b"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
