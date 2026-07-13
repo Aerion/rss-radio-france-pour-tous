@@ -71,9 +71,10 @@ type Server struct {
 // struct rather than a positional parameter list because several of these
 // are typically backed by the very same value - a *episodecache.Resolver
 // implements ManifestationResolver, ImageResolver, DescriptionResolver,
-// AudioResolver, and EnrichmentStatus all at once (see cmd/server/main.go)
-// - which a positional constructor would make dangerously easy to pass in
-// the wrong order without the compiler ever noticing.
+// TitleResolver, AudioResolver, and EnrichmentStatus all at once (see
+// cmd/server/main.go) - which a positional constructor would make
+// dangerously easy to pass in the wrong order without the compiler ever
+// noticing.
 type ServerConfig struct {
 	API API
 	// PublicBaseURL is this app's own externally visible base URL (e.g.
@@ -83,6 +84,7 @@ type ServerConfig struct {
 	ManifestationResolver feed.ManifestationResolver
 	ImageResolver         feed.ImageResolver
 	DescriptionResolver   feed.DescriptionResolver
+	TitleResolver         feed.TitleResolver
 	AudioResolver         AudioResolver
 	FeedCache             *feedcache.Cache
 	EnrichmentStatus      EnrichmentStatus
@@ -103,6 +105,7 @@ func NewServer(cfg ServerConfig) *Server {
 			Resolver:            cfg.ManifestationResolver,
 			ImageResolver:       cfg.ImageResolver,
 			DescriptionResolver: cfg.DescriptionResolver,
+			TitleResolver:       cfg.TitleResolver,
 		},
 		audioResolver:     cfg.AudioResolver,
 		feedCache:         cfg.FeedCache,

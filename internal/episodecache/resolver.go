@@ -27,6 +27,8 @@ type store interface {
 	UpsertOriginImage(ctx context.Context, diffusionID, mainImage string) error
 	GetOriginBody(ctx context.Context, diffusionID string) (bodyMarkdown, standfirst string, createdTime int64, ok bool, err error)
 	UpsertOriginBody(ctx context.Context, diffusionID, bodyMarkdown, standfirst string, createdTime int64) error
+	GetOriginTitle(ctx context.Context, diffusionID string) (title string, ok bool, err error)
+	UpsertOriginTitle(ctx context.Context, diffusionID, title string) error
 }
 
 // fetcher is the subset of *radiofrance.Client's behavior Resolver needs.
@@ -52,10 +54,10 @@ const (
 // Resolver turns a diffusion (or a bare manifestation ID) into playback
 // details, consulting the cache before falling back to the Radio France
 // API. Implements feed.ManifestationResolver, feed.ImageResolver,
-// feed.DescriptionResolver, httpapi.AudioResolver, and
+// feed.DescriptionResolver, feed.TitleResolver, httpapi.AudioResolver, and
 // httpapi.EnrichmentStatus.
 //
-// Resolve/ResolveImage/ResolveDescription never make an upstream call
+// Resolve/ResolveImage/ResolveDescription/ResolveTitle never make an upstream call
 // themselves: on a cache miss they enqueue a background job on enricher
 // and return a degraded-but-immediate fallback (see each method's doc
 // comment), so a request never blocks on Radio France. The actual upstream
@@ -298,7 +300,7 @@ type audioResolution struct {
 // feed build) - "" if this manifestation has never been seen by Resolve,
 // e.g. an old link from before this cache existed.
 //
-// Unlike Resolve/ResolveImage/ResolveDescription, this makes a synchronous
+// Unlike Resolve/ResolveImage/ResolveDescription/ResolveTitle, this makes a synchronous
 // live call on a cache miss rather than enqueuing background enrichment:
 // it isn't building a feed with a degradable fallback - a listener clicking
 // play needs the real URL right now, there's nothing to degrade to. This is
@@ -430,20 +432,55 @@ func (r *Resolver) ResolveDescription(ctx context.Context, d radiofrance.Diffusi
 	return d.BodyMarkdown, d.Standfirst, 0
 }
 
-// enrichOrigin resolves and caches originID's MainImage and
-// bodyMarkdown/standfirst/createdTime in a single GetDiffusion call, run by
-// an Enricher worker after ResolveImage/ResolveDescription enqueue it on a
-// cache miss - merging what used to be two separate live-fetch paths into
-// one upstream call. Reports whether the origin diffusion was
-// fetched successfully.
+// ResolveTitle returns the title to use for d, implementing
+// feed.TitleResolver.
+//
+// Unlike a rerun's MainImage (see ResolveImage), a rerun's own Title is
+// never blank - but live samples show it's typically just a generic,
+// auto-generated slot label (e.g. "Le code a changé du samedi 22 août
+// 2026") rather than the real episode title, which only lives on the
+// origin broadcast. For a rerun, this prefers the origin diffusion's
+// cached Title - same rationale as ResolveImage/ResolveDescription -
+// falling back to d's own Title if the origin's turns out to be blank or
+// isn't cached yet. On a cache miss, enrichOrigin is queued to resolve it
+// in the background (deduped with any job ResolveImage/ResolveDescription
+// already queued for the same origin - see enrichOrigin).
+func (r *Resolver) ResolveTitle(ctx context.Context, d radiofrance.Diffusion) string {
+	originID := d.OriginDiffusionID()
+	if originID == "" {
+		return d.Title
+	}
+
+	if title, ok, err := r.store.GetOriginTitle(ctx, originID); err == nil && ok {
+		r.observeCacheLookup(ctx, true)
+		if isBlank(title) {
+			return d.Title
+		}
+		return title
+	} else if err != nil {
+		slog.Warn("episodecache: failed to read origin diffusion title cache", "diffusionID", originID, "error", err)
+	}
+	r.observeCacheLookup(ctx, false)
+
+	r.enricher.enqueue(originKey(originID), originJob{originID: originID})
+	return d.Title
+}
+
+// enrichOrigin resolves and caches originID's MainImage,
+// bodyMarkdown/standfirst/createdTime, and Title in a single GetDiffusion
+// call, run by an Enricher worker after
+// ResolveImage/ResolveDescription/ResolveTitle enqueue it on a cache miss -
+// merging what used to be two separate live-fetch paths into one upstream
+// call. Reports whether the origin diffusion was fetched successfully.
 func (r *Resolver) enrichOrigin(ctx context.Context, originID string) bool {
 	// A concurrent request may have already resolved this since it was
 	// enqueued - recheck cheaply before doing any upstream work. Only skip
-	// entirely once both are cached; if just one is missing, it's still
-	// worth the one GetDiffusion call to fill in the rest.
+	// entirely once all three are cached; if just one is missing, it's
+	// still worth the one GetDiffusion call to fill in the rest.
 	_, imageCached, imageErr := r.store.GetOriginImage(ctx, originID)
 	_, _, _, bodyCached, bodyErr := r.store.GetOriginBody(ctx, originID)
-	if imageErr == nil && imageCached && bodyErr == nil && bodyCached {
+	_, titleCached, titleErr := r.store.GetOriginTitle(ctx, originID)
+	if imageErr == nil && imageCached && bodyErr == nil && bodyCached && titleErr == nil && titleCached {
 		return true
 	}
 
@@ -458,6 +495,9 @@ func (r *Resolver) enrichOrigin(ctx context.Context, originID string) bool {
 	}
 	if err := r.store.UpsertOriginBody(ctx, originID, origin.BodyMarkdown, origin.Standfirst, origin.CreatedTime); err != nil {
 		slog.Error("episodecache: failed to cache origin diffusion body", "diffusionID", originID, "error", err)
+	}
+	if err := r.store.UpsertOriginTitle(ctx, originID, origin.Title); err != nil {
+		slog.Error("episodecache: failed to cache origin diffusion title", "diffusionID", originID, "error", err)
 	}
 	return true
 }

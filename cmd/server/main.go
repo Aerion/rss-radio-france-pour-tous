@@ -86,6 +86,7 @@ func run() error {
 		ManifestationResolver: episodeCache,
 		ImageResolver:         episodeCache,
 		DescriptionResolver:   episodeCache,
+		TitleResolver:         episodeCache,
 		AudioResolver:         episodeCache,
 		FeedCache:             feedCache,
 		EnrichmentStatus:      episodeCache,

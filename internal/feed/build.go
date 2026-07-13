@@ -71,6 +71,17 @@ type DescriptionResolver interface {
 	ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (bodyMarkdown, standfirst string, originCreatedTime int64)
 }
 
+// TitleResolver picks the title to use for a diffusion's feed item,
+// typically backed by internal/episodecache. Unlike using d.Title directly,
+// it can follow a rerun's origin diffusion (an upstream call, cached) to
+// find the real episode title when the rerun's own title is just a generic,
+// auto-generated slot label - see episodecache.Resolver.ResolveTitle.
+// Declared here rather than importing episodecache directly for the same
+// reason as ManifestationResolver.
+type TitleResolver interface {
+	ResolveTitle(ctx context.Context, d radiofrance.Diffusion) string
+}
+
 // Builder builds RSS feeds for shows.
 type Builder struct {
 	// PublicBaseURL is this app's own externally-visible base URL, used to
@@ -95,6 +106,11 @@ type Builder struct {
 	// d.BodyMarkdown/d.Standfirst directly, with no rerun/origin handling -
 	// same escape hatch rationale as Resolver.
 	DescriptionResolver DescriptionResolver
+
+	// TitleResolver is nil-able. When nil, Build falls back to using d.Title
+	// directly, with no rerun/origin handling - same escape hatch rationale
+	// as Resolver.
+	TitleResolver TitleResolver
 }
 
 // Build renders an RSS 2.0 feed for one page of a show's diffusions.
@@ -196,6 +212,8 @@ type resolution struct {
 	// DescriptionResolver.ResolveDescription. Used by buildItem to flag a
 	// rerun in its description.
 	originCreatedTime int64
+	// title is the resolved item title - see TitleResolver.ResolveTitle.
+	title string
 	// expiresAt is when url may stop working, or nil if unknown - see
 	// ManifestationResolver.Resolve. Used by Build to compute the page's
 	// overall earliestExpiry.
@@ -203,21 +221,23 @@ type resolution struct {
 }
 
 // resolveAll resolves every diffusion's manifestation ID/URL/duration, cover
-// image, and description concurrently (bounded by resolveConcurrency), keyed
-// by diffusion ID. With none of Resolver/ImageResolver/DescriptionResolver
-// configured, the corresponding fields fall back to each diffusion's raw
-// ManifestationID/DiffusionImageURL/BodyMarkdown+Standfirst with no upstream
-// calls.
+// image, description, and title concurrently (bounded by
+// resolveConcurrency), keyed by diffusion ID. With none of
+// Resolver/ImageResolver/DescriptionResolver/TitleResolver configured, the
+// corresponding fields fall back to each diffusion's raw
+// ManifestationID/DiffusionImageURL/BodyMarkdown+Standfirst/Title with no
+// upstream calls.
 func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) map[string]resolution {
 	results := make(map[string]resolution, len(sd.Diffusions))
 
-	if b.Resolver == nil && b.ImageResolver == nil && b.DescriptionResolver == nil {
+	if b.Resolver == nil && b.ImageResolver == nil && b.DescriptionResolver == nil && b.TitleResolver == nil {
 		for _, d := range sd.Diffusions {
 			results[d.ID] = resolution{
 				manifestationID: d.ManifestationID(),
 				imageURL:        radiofrance.DiffusionImageURL(d),
 				bodyMarkdown:    d.BodyMarkdown,
 				standfirst:      d.Standfirst,
+				title:           d.Title,
 			}
 		}
 		return results
@@ -244,13 +264,18 @@ func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) 
 			} else {
 				res.bodyMarkdown, res.standfirst = d.BodyMarkdown, d.Standfirst
 			}
+			if b.TitleResolver != nil {
+				res.title = b.TitleResolver.ResolveTitle(gctx, d)
+			} else {
+				res.title = d.Title
+			}
 			mu.Lock()
 			results[d.ID] = res
 			mu.Unlock()
 			return nil
 		})
 	}
-	_ = g.Wait() // Resolve/ResolveImage/ResolveDescription degrade gracefully on error rather than failing; nothing to propagate here.
+	_ = g.Wait() // Resolve/ResolveImage/ResolveDescription/ResolveTitle degrade gracefully on error rather than failing; nothing to propagate here.
 	return results
 }
 
@@ -285,7 +310,7 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 	}
 
 	it := item{
-		Title:       sanitizeXMLText(d.Title),
+		Title:       sanitizeXMLText(res.title),
 		GUID:        guid(d, manifestationID),
 		Link:        sanitizeXMLText(d.Path),
 		Description: sanitizeXMLText(description),

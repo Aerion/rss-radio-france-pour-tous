@@ -153,6 +153,44 @@ func (s *Store) UpsertOriginImage(ctx context.Context, diffusionID, mainImage st
 	return nil
 }
 
+// GetOriginTitle returns the cached Title for a rerun's origin diffusion, or
+// ok=false if it hasn't been fetched yet. title may be "" with ok=true,
+// meaning the origin diffusion was already checked and simply has no title
+// (unobserved in practice, but handled the same way as GetOriginImage).
+func (s *Store) GetOriginTitle(ctx context.Context, diffusionID string) (title string, ok bool, err error) {
+	row := s.pool.QueryRow(ctx, `
+		SELECT title FROM diffusion_origin_image_cache WHERE diffusion_id = $1`, diffusionID)
+
+	var t *string
+	if err := row.Scan(&t); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("querying diffusion_origin_image_cache: %w", err)
+	}
+	if t == nil {
+		return "", false, nil
+	}
+	return *t, true, nil
+}
+
+// UpsertOriginTitle caches title (possibly "") as the resolved title for
+// origin diffusion diffusionID, without disturbing any mainImage/body
+// already cached for the same row.
+func (s *Store) UpsertOriginTitle(ctx context.Context, diffusionID, title string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO diffusion_origin_image_cache (diffusion_id, title, fetched_at)
+		VALUES ($1, $2, now())
+		ON CONFLICT (diffusion_id) DO UPDATE SET
+			title = excluded.title,
+			fetched_at = excluded.fetched_at`,
+		diffusionID, title)
+	if err != nil {
+		return fmt.Errorf("upserting diffusion_origin_image_cache: %w", err)
+	}
+	return nil
+}
+
 // GetOriginBody returns the cached bodyMarkdown/standfirst/createdTime for a
 // rerun's origin diffusion, or ok=false if that trio hasn't been fetched yet
 // (even if the row already exists because its mainImage was cached

@@ -493,6 +493,54 @@ func TestBuild_NoRerunBannerWhenOriginCreatedTimeZero(t *testing.T) {
 	}
 }
 
+// fakeTitleResolver is a stand-in for internal/episodecache.Resolver's
+// ResolveTitle method.
+type fakeTitleResolver struct {
+	titleByDiffusionID map[string]string
+}
+
+func (f fakeTitleResolver) ResolveTitle(ctx context.Context, d radiofrance.Diffusion) string {
+	return f.titleByDiffusionID[d.ID]
+}
+
+func TestBuild_UsesTitleResolverWhenConfigured(t *testing.T) {
+	b := Builder{
+		PublicBaseURL: testBuilder.PublicBaseURL,
+		TitleResolver: fakeTitleResolver{titleByDiffusionID: map[string]string{
+			"d1": "Real episode title",
+		}},
+	}
+	// The diffusion's own Title says something else - the resolver's
+	// answer must win, proving Build defers to it rather than d.Title.
+	d := diffusionWithManifestation("d1", 1700000000)
+	d.Title = "Generic rerun slot title"
+
+	out, _, _, err := b.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(out, "Real episode title") {
+		t.Errorf("expected the resolver's title in output:\n%s", out)
+	}
+	if strings.Contains(out, "Generic rerun slot title") {
+		t.Errorf("did not expect the diffusion's own Title in output:\n%s", out)
+	}
+}
+
+func TestBuild_FallsBackToOwnTitleWhenNoTitleResolver(t *testing.T) {
+	d := diffusionWithManifestation("d1", 1700000000)
+	d.Title = "Own title"
+
+	// testBuilder has no TitleResolver configured.
+	out, _, _, err := testBuilder.Build(context.Background(), sd([]radiofrance.Diffusion{d}, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if !strings.Contains(out, "Own title") {
+		t.Errorf("expected the diffusion's own Title in output:\n%s", out)
+	}
+}
+
 func TestBuild_IncludesDurationWhenResolverProvidesIt(t *testing.T) {
 	b := Builder{
 		PublicBaseURL: testBuilder.PublicBaseURL,

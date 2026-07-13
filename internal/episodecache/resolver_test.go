@@ -37,6 +37,10 @@ type fakeStore struct {
 	originBodySet      map[string]bool
 	originBodyGets     int
 	originBodyUpserts  int
+
+	originTitles      map[string]string
+	originTitleGets   int
+	originTitleUpsert int
 }
 
 func newFakeStore() *fakeStore {
@@ -47,6 +51,7 @@ func newFakeStore() *fakeStore {
 		originStandfirsts:  map[string]string{},
 		originCreatedTimes: map[string]int64{},
 		originBodySet:      map[string]bool{},
+		originTitles:       map[string]string{},
 	}
 }
 
@@ -100,6 +105,18 @@ func (s *fakeStore) UpsertOriginBody(ctx context.Context, diffusionID, bodyMarkd
 	s.originStandfirsts[diffusionID] = standfirst
 	s.originCreatedTimes[diffusionID] = createdTime
 	s.originBodySet[diffusionID] = true
+	return nil
+}
+
+func (s *fakeStore) GetOriginTitle(ctx context.Context, diffusionID string) (string, bool, error) {
+	s.originTitleGets++
+	title, ok := s.originTitles[diffusionID]
+	return title, ok, nil
+}
+
+func (s *fakeStore) UpsertOriginTitle(ctx context.Context, diffusionID, title string) error {
+	s.originTitleUpsert++
+	s.originTitles[diffusionID] = title
 	return nil
 }
 
@@ -828,18 +845,90 @@ func TestResolveImageAndDescription_ShareTheSameOriginJob(t *testing.T) {
 	d := diffusionWithOrigin("d1", "origin1", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-show-banner"})
 	r.ResolveImage(context.Background(), d)
 	r.ResolveDescription(context.Background(), d)
+	r.ResolveTitle(context.Background(), d)
 
 	if got := len(enricher.jobs); got != 1 {
-		t.Errorf("queued job count = %d, want 1 (both should enqueue the same deduped origin job)", got)
+		t.Errorf("queued job count = %d, want 1 (all three should enqueue the same deduped origin job)", got)
+	}
+}
+
+// --- ResolveTitle ---
+
+func TestResolveTitle_NoOriginUsesOwnTitle(t *testing.T) {
+	fetcher := &fakeFetcher{} // should not be called at all
+	r := NewResolver(newFakeStore(), fetcher, nil, newTestEnricher(), testMaxAge)
+
+	d := radiofrance.Diffusion{ID: "d1", Title: "own title"}
+	title := r.ResolveTitle(context.Background(), d)
+
+	if title != "own title" {
+		t.Errorf("ResolveTitle = %q, want own title", title)
+	}
+	if fetcher.diffusionCalls != 0 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (not a rerun)", fetcher.diffusionCalls)
+	}
+}
+
+func TestResolveTitle_RerunUsesCachedOriginTitleWithoutFetching(t *testing.T) {
+	store := newFakeStore()
+	store.originTitles["origin1"] = "real episode title"
+	fetcher := &fakeFetcher{} // should not be called
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	d := radiofrance.Diffusion{ID: "d1", Title: "generic rerun slot title"}
+	d.Relationships.OriginDiffusion = []string{"origin1"}
+	title := r.ResolveTitle(context.Background(), d)
+
+	if title != "real episode title" {
+		t.Errorf("ResolveTitle = %q, want cached origin title", title)
+	}
+	if fetcher.diffusionCalls != 0 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (cache hit)", fetcher.diffusionCalls)
+	}
+}
+
+func TestResolveTitle_RerunUsesCachedButBlankOriginTitleFallsBackToOwnTitle(t *testing.T) {
+	store := newFakeStore()
+	store.originTitles["origin1"] = "."
+	fetcher := &fakeFetcher{} // should not be called
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	d := radiofrance.Diffusion{ID: "d1", Title: "generic rerun slot title"}
+	d.Relationships.OriginDiffusion = []string{"origin1"}
+	title := r.ResolveTitle(context.Background(), d)
+
+	if title != "generic rerun slot title" {
+		t.Errorf("ResolveTitle = %q, want own title (origin blank)", title)
+	}
+}
+
+func TestResolveTitle_RerunCacheMissEnqueuesOriginJobAndFallsBackToOwnTitle(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{} // should not be called - the whole point of the fast path
+	enricher := newTestEnricher()
+	r := NewResolver(store, fetcher, nil, enricher, testMaxAge)
+
+	d := radiofrance.Diffusion{ID: "d1", Title: "generic rerun slot title"}
+	d.Relationships.OriginDiffusion = []string{"origin1"}
+	title := r.ResolveTitle(context.Background(), d)
+
+	if title != "generic rerun slot title" {
+		t.Errorf("ResolveTitle = %q, want own title while enrichment is pending", title)
+	}
+	if fetcher.diffusionCalls != 0 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (nothing fetched synchronously)", fetcher.diffusionCalls)
+	}
+	if !enricher.isPending(originKey("origin1")) {
+		t.Error("expected an origin job to be enqueued for origin1")
 	}
 }
 
 // --- enrichOrigin: background enrichment path ---
 
-func TestEnrichOrigin_CachesMainImageAndBodyViaSingleCall(t *testing.T) {
+func TestEnrichOrigin_CachesMainImageAndBodyAndTitleViaSingleCall(t *testing.T) {
 	store := newFakeStore()
 	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
-		"origin1": {ID: "origin1", MainImage: "uuid-episode", BodyMarkdown: "**rich** origin body", Standfirst: "origin standfirst", CreatedTime: 1704067200},
+		"origin1": {ID: "origin1", Title: "Real episode title", MainImage: "uuid-episode", BodyMarkdown: "**rich** origin body", Standfirst: "origin standfirst", CreatedTime: 1704067200},
 	}}
 	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
@@ -849,7 +938,7 @@ func TestEnrichOrigin_CachesMainImageAndBodyViaSingleCall(t *testing.T) {
 		t.Fatal("expected enrichOrigin to report success")
 	}
 	if fetcher.diffusionCalls != 1 {
-		t.Errorf("fetcher.diffusionCalls = %d, want 1 (single call resolves both image and body)", fetcher.diffusionCalls)
+		t.Errorf("fetcher.diffusionCalls = %d, want 1 (single call resolves image, body, and title)", fetcher.diffusionCalls)
 	}
 	if store.originImages["origin1"] != "uuid-episode" {
 		t.Errorf("store.originImages[origin1] = %q, want it cached", store.originImages["origin1"])
@@ -860,12 +949,16 @@ func TestEnrichOrigin_CachesMainImageAndBodyViaSingleCall(t *testing.T) {
 	if store.originCreatedTimes["origin1"] != 1704067200 {
 		t.Errorf("store.originCreatedTimes[origin1] = %d, want it cached", store.originCreatedTimes["origin1"])
 	}
+	if store.originTitles["origin1"] != "Real episode title" {
+		t.Errorf("store.originTitles[origin1] = %q, want it cached", store.originTitles["origin1"])
+	}
 }
 
-func TestEnrichOrigin_NoOpWhenBothAlreadyCached(t *testing.T) {
+func TestEnrichOrigin_NoOpWhenAllAlreadyCached(t *testing.T) {
 	store := newFakeStore()
 	store.originImages["origin1"] = "uuid-episode"
 	store.originBodySet["origin1"] = true
+	store.originTitles["origin1"] = "Real episode title"
 	fetcher := &fakeFetcher{} // should not be called
 	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
@@ -875,7 +968,7 @@ func TestEnrichOrigin_NoOpWhenBothAlreadyCached(t *testing.T) {
 		t.Error("expected enrichOrigin to report success (already cached)")
 	}
 	if fetcher.diffusionCalls != 0 {
-		t.Errorf("fetcher.diffusionCalls = %d, want 0 (both already cached)", fetcher.diffusionCalls)
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (all already cached)", fetcher.diffusionCalls)
 	}
 }
 
