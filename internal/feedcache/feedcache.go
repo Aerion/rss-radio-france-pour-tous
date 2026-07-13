@@ -56,6 +56,13 @@ type Entry struct {
 	// enrichment (unresolved duration, or - for a rerun - an unresolved
 	// origin) at the time this entry was cached.
 	HadDegraded bool
+	// EarliestExpiry is the earliest known expiration among Body's baked-in
+	// enclosure URLs, or nil if none carry a known expiration (see
+	// feed.Builder.Build). Lets a *fully*-resolved entry still be actively
+	// invalidated once an enclosure it already resolved goes dead, rather
+	// than serving it verbatim for the rest of ttl regardless - see the
+	// invalidation check in internal/httpapi.
+	EarliestExpiry *time.Time
 }
 
 type entry struct {

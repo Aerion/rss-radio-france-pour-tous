@@ -294,3 +294,41 @@ func TestHandleRequest_RSSFeed_NonDegradedCacheHitSkipsEnrichmentCheck(t *testin
 		t.Errorf("enrichment.calls = %d, want 0 (active-invalidation check should be skipped for a non-degraded entry)", enrichment.calls)
 	}
 }
+
+func TestHandleRequest_RSSFeed_NonDegradedCacheHitButExpiredInvalidatesAndRebuilds(t *testing.T) {
+	show := radiofrance.Show{ID: "0b91efaf", Title: "Affaires sensibles"}
+	api := &fakeAPI{showDiffusions: radiofrance.ShowDiffusions{
+		Diffusions: []radiofrance.Diffusion{diffusionWithOneManifestation("d1")}, ShowDetails: show,
+	}}
+	expired := time.Now().Add(-time.Minute)
+	resolver := fakeManifestationResolver{url: "https://cdn.example.com/audio.mp3", duration: 90 * time.Second, expiresAt: &expired}
+	server := NewServer(api, "https://radio-france-rss.example.com", resolver, nil, nil, &fakeAudioResolver{},
+		feedcache.New(time.Hour, nil), &fakeEnrichmentStatus{}, nil, nil)
+	h := server.Routes(noopInstrumenter{})
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+
+	if api.showDiffusionsCalls != 2 {
+		t.Errorf("api.showDiffusionsCalls = %d, want 2 (a fully-resolved entry whose baked-in URL has since expired should be invalidated and rebuilt)", api.showDiffusionsCalls)
+	}
+}
+
+func TestHandleRequest_RSSFeed_NonDegradedCacheHitNotYetExpiredServesFromCache(t *testing.T) {
+	show := radiofrance.Show{ID: "0b91efaf", Title: "Affaires sensibles"}
+	api := &fakeAPI{showDiffusions: radiofrance.ShowDiffusions{
+		Diffusions: []radiofrance.Diffusion{diffusionWithOneManifestation("d1")}, ShowDetails: show,
+	}}
+	notYetExpired := time.Now().Add(time.Hour)
+	resolver := fakeManifestationResolver{url: "https://cdn.example.com/audio.mp3", duration: 90 * time.Second, expiresAt: &notYetExpired}
+	server := NewServer(api, "https://radio-france-rss.example.com", resolver, nil, nil, &fakeAudioResolver{},
+		feedcache.New(time.Hour, nil), &fakeEnrichmentStatus{}, nil, nil)
+	h := server.Routes(noopInstrumenter{})
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+
+	if api.showDiffusionsCalls != 1 {
+		t.Errorf("api.showDiffusionsCalls = %d, want 1 (entry not yet expired should still be served from cache)", api.showDiffusionsCalls)
+	}
+}

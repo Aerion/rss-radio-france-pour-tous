@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/analytics"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/feedcache"
@@ -86,9 +87,15 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		// stays fresh from the feed cache's point of view until its TTL
 		// elapses - but if background enrichment has since caught up,
 		// there's no reason to keep serving the stale, degraded copy
-		// until then: invalidate it now and fall through to rebuild,
-		// this time fully enriched.
-		if !entry.HadDegraded || !s.enrichmentStatus.AllResolved(entry.Diffusions) {
+		// until then: invalidate it now and fall through to rebuild, this
+		// time fully enriched. Separately, even a page that was fully
+		// resolved when cached can have a baked-in enclosure URL that's
+		// since expired - EarliestExpiry catches that case too, since
+		// nothing else about a fully-resolved entry would otherwise ever
+		// trigger a rebuild before ttl.
+		degradedNowResolved := entry.HadDegraded && s.enrichmentStatus.AllResolved(entry.Diffusions)
+		expired := entry.EarliestExpiry != nil && !entry.EarliestExpiry.After(time.Now())
+		if !degradedNowResolved && !expired {
 			s.observeShow(r.Context(), entry.ShowID, entry.ShowTitle)
 			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 			_, err := fmt.Fprint(w, entry.Body)
@@ -108,17 +115,18 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		nextPageURL = fmt.Sprintf("%s%s?page=%d", s.publicBaseURL, r.URL.Path, *showDiffusions.NextPageIdx)
 	}
 
-	body, hadDegraded, err := s.feedBuilder.Build(r.Context(), showDiffusions, nextPageURL)
+	body, hadDegraded, earliestExpiry, err := s.feedBuilder.Build(r.Context(), showDiffusions, nextPageURL)
 	if err != nil {
 		return err
 	}
 
 	s.feedCache.Set(key, feedcache.Entry{
-		Body:        body,
-		ShowID:      showID,
-		ShowTitle:   showDiffusions.ShowDetails.Title,
-		Diffusions:  showDiffusions.Diffusions,
-		HadDegraded: hadDegraded,
+		Body:           body,
+		ShowID:         showID,
+		ShowTitle:      showDiffusions.ShowDetails.Title,
+		Diffusions:     showDiffusions.Diffusions,
+		HadDegraded:    hadDegraded,
+		EarliestExpiry: earliestExpiry,
 	})
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")

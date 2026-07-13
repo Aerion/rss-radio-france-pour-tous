@@ -91,14 +91,18 @@ func (r *Resolver) observeCacheLookup(ctx context.Context, hit bool) {
 	r.observer.ObserveCacheLookup(ctx, outcome)
 }
 
-// Resolve returns the manifestation ID, playable URL, and duration to use
-// for d's enclosure/itunes:duration, used while building a show's feed.
-// included is whatever manifestation data came back inline with the
-// diffusions page (see radiofrance.ShowDiffusions.Manifestations) - not
-// exhaustive. url is "" when the principal manifestation isn't yet known -
-// enrichManifestation is queued to resolve it in the background, and the
-// caller falls back to the legacy /audio/ redirect for this item in the
-// meantime (which resolves it live - see ResolveAudioURL).
+// Resolve returns the manifestation ID, playable URL, duration, and
+// expiration to use for d's enclosure/itunes:duration, used while building
+// a show's feed. included is whatever manifestation data came back inline
+// with the diffusions page (see radiofrance.ShowDiffusions.Manifestations) -
+// not exhaustive. url is "" when the principal manifestation isn't yet
+// known - enrichManifestation is queued to resolve it in the background,
+// and the caller falls back to the legacy /audio/ redirect for this item in
+// the meantime (which resolves it live - see ResolveAudioURL). expiresAt is
+// nil unless the manifestation's own expiration is known, and lets the
+// caller (see feed.Build) work out the earliest point at which a fully-
+// resolved feed page needs rebuilding even though nothing in it was ever
+// degraded - see feedcache.Entry.EarliestExpiry.
 //
 // Prefers the manifestation flagged Principal by the API over d's default
 // (array position 0): live samples show non-principal manifestations carry
@@ -110,23 +114,23 @@ func (r *Resolver) observeCacheLookup(ctx context.Context, hit bool) {
 // degrade to d's default manifestation (with no known URL or duration),
 // enqueuing background enrichment so a subsequent request resolves it for
 // real.
-func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID, url string, duration time.Duration) {
+func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID, url string, duration time.Duration, expiresAt *time.Time) {
 	candidates := d.Relationships.Manifestations
 	if len(candidates) == 0 {
-		return "", "", 0
+		return "", "", 0, nil
 	}
 
 	if id, m, ok := findPrincipal(candidates, included); ok {
 		r.cache(ctx, id, d, showID, showTitle, m)
-		return id, m.URL, m.Duration
+		return id, m.URL, m.Duration, m.ExpiresAt
 	}
 
 	if id, e, ok := r.findCachedPrincipal(ctx, candidates, d.UpdatedTime); ok {
-		return id, e.URL, e.Duration
+		return id, e.URL, e.Duration, e.ExpiresAt
 	}
 
 	r.enricher.enqueue(manifestationKey(d.ID), manifestationJob{showID: showID, showTitle: showTitle, d: d, included: included})
-	return d.ManifestationID(), "", 0
+	return d.ManifestationID(), "", 0, nil
 }
 
 // enrichManifestation resolves and caches d's principal manifestation,

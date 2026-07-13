@@ -58,10 +58,11 @@ func (f *fakeEnrichmentStatus) AllResolved(diffusions []radiofrance.Diffusion) b
 // internal/episodecache.Resolver's Resolve method, letting tests produce a
 // feed with a real (non-degraded) duration/URL without a real cache/API.
 type fakeManifestationResolver struct {
-	url      string
-	duration time.Duration
+	url       string
+	duration  time.Duration
+	expiresAt *time.Time
 }
 
-func (f fakeManifestationResolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (string, string, time.Duration) {
-	return d.ManifestationID(), f.url, f.duration
+func (f fakeManifestationResolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (string, string, time.Duration, *time.Time) {
+	return d.ManifestationID(), f.url, f.duration, f.expiresAt
 }

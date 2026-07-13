@@ -173,7 +173,7 @@ func TestResolve_PrefersPrincipalFromIncluded(t *testing.T) {
 		"m3": {URL: "https://cdn.example.com/m3.mp3", Duration: 92 * time.Second, Principal: false},
 	}
 
-	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, included)
+	manifestationID, url, duration, _ := r.Resolve(context.Background(), "show1", "Show One", d, included)
 
 	if manifestationID != "m2" {
 		t.Errorf("manifestationID = %q, want m2 (the principal one)", manifestationID)
@@ -212,7 +212,7 @@ func TestResolve_FallsBackToCachedPrincipalWhenNotInIncluded(t *testing.T) {
 		"m3": {URL: "https://cdn.example.com/m3.mp3", Principal: false},
 	}
 
-	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, included)
+	manifestationID, url, duration, _ := r.Resolve(context.Background(), "show1", "Show One", d, included)
 
 	if manifestationID != "m2" {
 		t.Errorf("manifestationID = %q, want m2 (cached principal)", manifestationID)
@@ -235,7 +235,7 @@ func TestResolve_CacheMissEnqueuesManifestationJobAndReturnsDegradedFallback(t *
 	r := NewResolver(store, fetcher, nil, enricher, testMaxAge)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2")
-	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
+	manifestationID, url, duration, _ := r.Resolve(context.Background(), "show1", "Show One", d, nil)
 
 	if manifestationID != "m1" {
 		t.Errorf("manifestationID = %q, want m1 (d.ManifestationID() fallback)", manifestationID)
@@ -255,7 +255,7 @@ func TestResolve_NoManifestationReturnsEmpty(t *testing.T) {
 	r := NewResolver(newFakeStore(), &fakeFetcher{}, nil, newTestEnricher(), testMaxAge)
 
 	d := radiofrance.Diffusion{ID: "d1"} // no Relationships.Manifestations
-	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
+	manifestationID, url, duration, _ := r.Resolve(context.Background(), "show1", "Show One", d, nil)
 
 	if manifestationID != "" || url != "" || duration != 0 {
 		t.Errorf("got (%q, %q, %v), want (\"\", \"\", 0)", manifestationID, url, duration)

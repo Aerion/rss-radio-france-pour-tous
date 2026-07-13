@@ -33,18 +33,20 @@ var guidCutoff = time.Date(2022, 9, 12, 0, 0, 0, 0, time.UTC)
 // concurrent Radio France requests.
 const resolveConcurrency = 8
 
-// ManifestationResolver looks up the manifestation ID, playable URL, and
-// duration to use for a diffusion's enclosure/itunes:duration - typically
-// backed by internal/episodecache, consulting a cache (and preferring the
-// API's Principal manifestation) before falling back to the Radio France
-// API. included is whatever manifestation data came back inline with the
-// diffusions page (see radiofrance.ShowDiffusions.Manifestations). url is
-// "" if no playable URL could be resolved, in which case Build falls back
-// to the legacy /audio/ redirect for that item.
+// ManifestationResolver looks up the manifestation ID, playable URL,
+// duration, and expiration to use for a diffusion's enclosure/itunes:duration
+// - typically backed by internal/episodecache, consulting a cache (and
+// preferring the API's Principal manifestation) before falling back to the
+// Radio France API. included is whatever manifestation data came back
+// inline with the diffusions page (see
+// radiofrance.ShowDiffusions.Manifestations). url is "" if no playable URL
+// could be resolved, in which case Build falls back to the legacy /audio/
+// redirect for that item. expiresAt is nil unless the resolved
+// manifestation's own expiration is known.
 // Declared here rather than importing episodecache directly so this
 // package doesn't need to know about caching/storage at all.
 type ManifestationResolver interface {
-	Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID, url string, duration time.Duration)
+	Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID, url string, duration time.Duration, expiresAt *time.Time)
 }
 
 // ImageResolver picks the cover image URL to use for a diffusion, typically
@@ -102,7 +104,12 @@ type Builder struct {
 // (unresolved duration, or - for a rerun - an unresolved origin) at build
 // time - callers use it to decide whether a rendered feed is safe to cache
 // past its next background-enrichment update (see internal/feedcache).
-func (b Builder) Build(ctx context.Context, sd radiofrance.ShowDiffusions, nextPageURL string) (body string, hadDegraded bool, err error) {
+// earliestExpiry is the earliest known ExpiresAt among the page's resolved
+// manifestations, or nil if none carry a known expiration - callers use it
+// to decide when even a *fully*-resolved cached page needs rebuilding,
+// since a baked-in enclosure URL can go dead well before the feed cache's
+// own TTL elapses.
+func (b Builder) Build(ctx context.Context, sd radiofrance.ShowDiffusions, nextPageURL string) (body string, hadDegraded bool, earliestExpiry *time.Time, err error) {
 	show := sd.ShowDetails
 	resolved := b.resolveAll(ctx, sd)
 
@@ -116,6 +123,9 @@ func (b Builder) Build(ctx context.Context, sd radiofrance.ShowDiffusions, nextP
 		items = append(items, it)
 		if isDegraded(d, res) {
 			hadDegraded = true
+		}
+		if res.expiresAt != nil && (earliestExpiry == nil || res.expiresAt.Before(*earliestExpiry)) {
+			earliestExpiry = res.expiresAt
 		}
 	}
 
@@ -151,9 +161,9 @@ func (b Builder) Build(ctx context.Context, sd radiofrance.ShowDiffusions, nextP
 
 	xmlBytes, err := xml.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return "", false, fmt.Errorf("marshaling RSS feed: %w", err)
+		return "", false, nil, fmt.Errorf("marshaling RSS feed: %w", err)
 	}
-	return xml.Header + string(xmlBytes), hadDegraded, nil
+	return xml.Header + string(xmlBytes), hadDegraded, earliestExpiry, nil
 }
 
 // isDegraded reports whether res still needs background enrichment for d:
@@ -186,6 +196,10 @@ type resolution struct {
 	// DescriptionResolver.ResolveDescription. Used by buildItem to flag a
 	// rerun in its description.
 	originCreatedTime int64
+	// expiresAt is when url may stop working, or nil if unknown - see
+	// ManifestationResolver.Resolve. Used by Build to compute the page's
+	// overall earliestExpiry.
+	expiresAt *time.Time
 }
 
 // resolveAll resolves every diffusion's manifestation ID/URL/duration, cover
@@ -216,7 +230,7 @@ func (b Builder) resolveAll(ctx context.Context, sd radiofrance.ShowDiffusions) 
 		g.Go(func() error {
 			var res resolution
 			if b.Resolver != nil {
-				res.manifestationID, res.url, res.duration = b.Resolver.Resolve(gctx, sd.ShowDetails.ID, sd.ShowDetails.Title, d, sd.Manifestations)
+				res.manifestationID, res.url, res.duration, res.expiresAt = b.Resolver.Resolve(gctx, sd.ShowDetails.ID, sd.ShowDetails.Title, d, sd.Manifestations)
 			} else {
 				res.manifestationID = d.ManifestationID()
 			}
