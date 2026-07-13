@@ -115,6 +115,22 @@ func TestBuild_SkipsDiffusionsWithoutManifestation(t *testing.T) {
 	}
 }
 
+func TestBuild_SkipsDiffusionsScheduledInTheFuture(t *testing.T) {
+	past := diffusionWithManifestation("d1", 1700000000)
+	future := diffusionWithManifestation("d2", time.Now().Add(24*time.Hour).Unix())
+
+	out, _, _, err := testBuilder.Build(context.Background(), sd([]radiofrance.Diffusion{past, future}, testShow()), "")
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if got := strings.Count(out, "<item>"); got != 1 {
+		t.Errorf("item count = %d, want 1 (diffusion scheduled in the future should be skipped)\n%s", got, out)
+	}
+	if strings.Contains(out, "Episode d2") {
+		t.Errorf("expected the future-dated diffusion to be omitted:\n%s", out)
+	}
+}
+
 func TestBuild_EnclosureHasAudioMpegType(t *testing.T) {
 	diffusions := []radiofrance.Diffusion{diffusionWithManifestation("d1", 1700000000)}
 	out, _, _, err := testBuilder.Build(context.Background(), sd(diffusions, testShow()), "")

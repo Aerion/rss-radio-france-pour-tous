@@ -286,6 +286,18 @@ func (b Builder) buildItem(d radiofrance.Diffusion, res resolution) (item, bool)
 		return item{}, false
 	}
 
+	if time.Unix(d.CreatedTime, 0).After(time.Now()) {
+		// Radio France pre-schedules rerun slots (e.g. summer replacement
+		// programming) weeks ahead in its CMS, and CreatedTime on those
+		// diffusions is the future slot's own timestamp rather than a past
+		// broadcast date. A future-dated pubDate confuses podcast clients
+		// (observed: AntennaPod displaying the current date instead of the
+		// real, future one) - simplest fix is to not publish the episode
+		// until its scheduled time has actually passed.
+		slog.Info("diffusion is scheduled in the future, skipping", "diffusionID", d.ID, "createdTime", d.CreatedTime)
+		return item{}, false
+	}
+
 	description := stripShortcodes(res.bodyMarkdown)
 	if isPlaceholder(description) {
 		description = res.standfirst
