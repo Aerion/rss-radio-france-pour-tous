@@ -81,8 +81,30 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	body, err := s.resolveFeed(r.Context(), showID, page, r.URL.Path)
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	_, err = fmt.Fprint(w, body)
+	return err
+}
+
+// resolveFeed returns the rendered feed XML for showID's page, consulting
+// the feed cache first (see feedcache.Cache) and only falling through to a
+// real rebuild - fetching diffusions, building the feed, and repopulating
+// the cache - on a miss or an actively-invalidated entry. requestPath is
+// r.URL.Path, needed to build the page's next-page link.
+//
+// Also attributes the request to its show for analytics/metrics (see
+// observeShow) as soon as the show is known: immediately on a cache hit,
+// or right after the upstream fetch on a miss - deliberately before the
+// (possibly slower) feed build, so a request that fails partway through
+// building still gets attributed rather than showing up as show-less.
+func (s *Server) resolveFeed(ctx context.Context, showID string, page int, requestPath string) (body string, err error) {
 	key := feedcache.Key(showID, page)
-	if entry, ok := s.feedCache.Get(r.Context(), key); ok {
+	if entry, ok := s.feedCache.Get(ctx, key); ok {
 		// A page cached degraded (some items still missing enrichment)
 		// stays fresh from the feed cache's point of view until its TTL
 		// elapses - but if background enrichment has since caught up,
@@ -96,28 +118,26 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		degradedNowResolved := entry.HadDegraded && s.enrichmentStatus.AllResolved(entry.Diffusions)
 		expired := entry.EarliestExpiry != nil && !entry.EarliestExpiry.After(time.Now())
 		if !degradedNowResolved && !expired {
-			s.observeShow(r.Context(), entry.ShowID, entry.ShowTitle)
-			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-			_, err := fmt.Fprint(w, entry.Body)
-			return err
+			s.observeShow(ctx, entry.ShowID, entry.ShowTitle)
+			return entry.Body, nil
 		}
 		s.feedCache.Invalidate(key)
 	}
 
-	showDiffusions, err := s.api.GetShowDiffusions(r.Context(), showID, page)
+	showDiffusions, err := s.api.GetShowDiffusions(ctx, showID, page)
 	if err != nil {
-		return err
+		return "", err
 	}
-	s.observeShow(r.Context(), showID, showDiffusions.ShowDetails.Title)
+	s.observeShow(ctx, showID, showDiffusions.ShowDetails.Title)
 
 	var nextPageURL string
 	if showDiffusions.NextPageIdx != nil {
-		nextPageURL = fmt.Sprintf("%s%s?page=%d", s.publicBaseURL, r.URL.Path, *showDiffusions.NextPageIdx)
+		nextPageURL = fmt.Sprintf("%s%s?page=%d", s.publicBaseURL, requestPath, *showDiffusions.NextPageIdx)
 	}
 
-	body, hadDegraded, earliestExpiry, err := s.feedBuilder.Build(r.Context(), showDiffusions, nextPageURL)
+	body, hadDegraded, earliestExpiry, err := s.feedBuilder.Build(ctx, showDiffusions, nextPageURL)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	s.feedCache.Set(key, feedcache.Entry{
@@ -129,9 +149,7 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		EarliestExpiry: earliestExpiry,
 	})
 
-	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
-	_, err = fmt.Fprint(w, body)
-	return err
+	return body, nil
 }
 
 func (s *Server) handleAudio(w http.ResponseWriter, r *http.Request) error {
