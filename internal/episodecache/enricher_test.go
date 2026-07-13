@@ -148,6 +148,61 @@ func TestEnricher_ProcessAppliesJobTimeout(t *testing.T) {
 	}
 }
 
+func TestEnricher_IsBackingOffAfterFailedJob(t *testing.T) {
+	e := NewEnricher(10, time.Second, nil)
+	job, _ := newCountingJob(false)
+	e.enqueue("key1", job)
+
+	r := NewResolver(newFakeStore(), &fakeFetcher{}, nil, e, time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		e.Run(ctx, r, 1)
+		close(done)
+	}()
+
+	waitUntil(t, func() bool { return !e.isPending("key1") }, time.Second)
+	cancel()
+	<-done
+
+	if !e.isBackingOff("key1") {
+		t.Error("expected key1 to be backing off after its job failed")
+	}
+}
+
+func TestEnricher_IsBackingOffClearedAfterSuccessfulRetry(t *testing.T) {
+	e := NewEnricher(10, time.Second, nil)
+	// Simulate a prior failure directly, as process() would have left it.
+	e.failedUntil.Store("key1", time.Now().Add(failureBackoff))
+
+	succeed, _ := newCountingJob(true)
+	e.enqueue("key1", succeed)
+
+	r := NewResolver(newFakeStore(), &fakeFetcher{}, nil, e, time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		e.Run(ctx, r, 1)
+		close(done)
+	}()
+
+	waitUntil(t, func() bool { return !e.isBackingOff("key1") }, time.Second)
+	cancel()
+	<-done
+}
+
+func TestEnricher_IsBackingOffFalseOncePastDeadline(t *testing.T) {
+	e := NewEnricher(10, time.Second, nil)
+	e.failedUntil.Store("key1", time.Now().Add(-time.Second)) // already elapsed
+
+	if e.isBackingOff("key1") {
+		t.Error("expected key1 to no longer be backing off once its deadline has passed")
+	}
+	if _, stillTracked := e.failedUntil.Load("key1"); stillTracked {
+		t.Error("expected an elapsed backoff entry to be cleaned up, not left behind")
+	}
+}
+
 func TestEnricher_RecordsEnqueueAndProcessedMetrics(t *testing.T) {
 	metrics := &fakeEnrichmentObserver{}
 	e := NewEnricher(2, time.Second, metrics) // big enough to hold key1+key2 before Run starts draining

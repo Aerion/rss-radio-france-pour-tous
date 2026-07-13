@@ -821,3 +821,18 @@ func TestAllResolved_PendingOriginOfRerunReturnsFalse(t *testing.T) {
 		t.Error("expected AllResolved to be false while the origin job is still pending")
 	}
 }
+
+func TestAllResolved_RecentlyFailedManifestationReturnsFalse(t *testing.T) {
+	enricher := newTestEnricher()
+	r := NewResolver(newFakeStore(), &fakeFetcher{}, nil, enricher, testMaxAge)
+
+	d := diffusionWithManifestations("d1", 100, "m1")
+	// Simulate a job for d1 having already run and failed, as
+	// Enricher.process would leave it - nothing pending, but still
+	// backing off.
+	enricher.failedUntil.Store(manifestationKey("d1"), time.Now().Add(failureBackoff))
+
+	if r.AllResolved([]radiofrance.Diffusion{d}) {
+		t.Error("expected AllResolved to be false while the manifestation is backing off from a recent failure")
+	}
+}

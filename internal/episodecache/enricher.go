@@ -32,6 +32,17 @@ const (
 	jobKindOrigin        = "origin"
 )
 
+// failureBackoff is how long a key that just failed enrichment is
+// considered still "not resolved" for Resolver.AllResolved's purposes,
+// after the failed job has already cleared its pending marker (see
+// Enricher.process). Without this, a diffusion whose upstream lookup keeps
+// failing (e.g. Radio France down for that item) would report as resolved
+// the instant the failed job finishes, causing every subsequent request to
+// invalidate and rebuild its degraded feed page - re-enqueuing, re-failing,
+// and re-invalidating on essentially every request instead of settling
+// into serving the stale degraded copy until upstream recovers.
+const failureBackoff = 5 * time.Minute
+
 // job is one unit of background enrichment work. Implemented as typed
 // structs (manifestationJob/originJob) rather than closures so a job can
 // never accidentally capture a stale request-scoped context.Context - a
@@ -85,10 +96,11 @@ type queuedJob struct {
 // cache in the background, so the next request for the same episode is a
 // cache hit.
 type Enricher struct {
-	jobs    chan queuedJob
-	pending sync.Map // key (string) -> struct{}, set while a job is queued or running
-	timeout time.Duration
-	metrics EnrichmentObserver
+	jobs        chan queuedJob
+	pending     sync.Map // key (string) -> struct{}, set while a job is queued or running
+	failedUntil sync.Map // key (string) -> time.Time, set once a job fails - see failureBackoff
+	timeout     time.Duration
+	metrics     EnrichmentObserver
 }
 
 // NewEnricher creates an Enricher. queueSize bounds how many jobs can be
@@ -138,6 +150,21 @@ func (e *Enricher) isPending(key string) bool {
 	return pending
 }
 
+// isBackingOff reports whether key's most recent enrichment job failed
+// within the last failureBackoff, and hasn't been retried since - used
+// together with isPending by Resolver.AllResolved.
+func (e *Enricher) isBackingOff(key string) bool {
+	v, ok := e.failedUntil.Load(key)
+	if !ok {
+		return false
+	}
+	if time.Now().After(v.(time.Time)) {
+		e.failedUntil.Delete(key)
+		return false
+	}
+	return true
+}
+
 // Run starts workers goroutines draining the queue against r, blocking
 // until ctx is done. Meant to be started as a background goroutine. r is
 // passed in here (rather than stored on Enricher at construction) so
@@ -178,6 +205,9 @@ func (e *Enricher) process(ctx context.Context, r *Resolver, qj queuedJob) {
 	outcome := jobOutcomeFailed
 	if qj.job.run(jobCtx, r) {
 		outcome = jobOutcomeSucceeded
+		e.failedUntil.Delete(qj.key)
+	} else {
+		e.failedUntil.Store(qj.key, time.Now().Add(failureBackoff))
 	}
 	e.observeProcessed(qj.job.kind(), outcome)
 }

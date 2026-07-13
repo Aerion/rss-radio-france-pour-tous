@@ -398,16 +398,23 @@ func (r *Resolver) enrichOrigin(ctx context.Context, originID string) bool {
 // httpapi.EnrichmentStatus (declared there to keep that package decoupled
 // from episodecache), letting a degraded cached feed page be invalidated
 // as soon as it catches up instead of waiting out the feed cache's TTL.
-// Deliberately cheap: just in-memory pending-set lookups (see
-// Enricher.isPending), no DB reads or upstream calls, so it's fine to call
-// on every cache hit for a page that was degraded when it was cached.
+// A key whose enrichment job recently failed counts as not-yet-resolved
+// too, for failureBackoff - otherwise a persistently failing upstream
+// would make every single request invalidate and rebuild the page, instead
+// of settling into serving the stale degraded copy until the backoff
+// elapses. Deliberately cheap: just in-memory lookups (see
+// Enricher.isPending/isBackingOff), no DB reads or upstream calls, so it's
+// fine to call on every cache hit for a page that was degraded when it was
+// cached.
 func (r *Resolver) AllResolved(diffusions []radiofrance.Diffusion) bool {
 	for _, d := range diffusions {
-		if r.enricher.isPending(manifestationKey(d.ID)) {
+		if r.enricher.isPending(manifestationKey(d.ID)) || r.enricher.isBackingOff(manifestationKey(d.ID)) {
 			return false
 		}
-		if originID := d.OriginDiffusionID(); originID != "" && r.enricher.isPending(originKey(originID)) {
-			return false
+		if originID := d.OriginDiffusionID(); originID != "" {
+			if r.enricher.isPending(originKey(originID)) || r.enricher.isBackingOff(originKey(originID)) {
+				return false
+			}
 		}
 	}
 	return true
