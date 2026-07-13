@@ -3,6 +3,7 @@ package episodecache
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -510,6 +511,93 @@ func TestResolveAudioURL_ObservesCacheHitAndMiss(t *testing.T) {
 	want := []string{outcomeHit, outcomeMiss}
 	if len(observer.outcomes) != len(want) || observer.outcomes[0] != want[0] || observer.outcomes[1] != want[1] {
 		t.Errorf("observer.outcomes = %v, want %v", observer.outcomes, want)
+	}
+}
+
+// syncFakeStore wraps fakeStore with a mutex, since fakeStore's own
+// counters aren't safe for concurrent access - needed for
+// TestResolveAudioURL_DedupesConcurrentColdFetches, which calls
+// ResolveAudioURL from several goroutines at once (store.Get runs on every
+// caller, only the singleflight-selected winner's store.Upsert should ever
+// run, but Get itself is still genuinely concurrent here).
+type syncFakeStore struct {
+	mu sync.Mutex
+	*fakeStore
+}
+
+func newSyncFakeStore() *syncFakeStore {
+	return &syncFakeStore{fakeStore: newFakeStore()}
+}
+
+func (s *syncFakeStore) Get(ctx context.Context, manifestationID string) (Entry, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fakeStore.Get(ctx, manifestationID)
+}
+
+func (s *syncFakeStore) Upsert(ctx context.Context, e Entry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fakeStore.Upsert(ctx, e)
+}
+
+// blockingFetcher wraps fakeFetcher, blocking GetManifestation until
+// release is closed, and signaling started on entry - used to widen the
+// race window in TestResolveAudioURL_DedupesConcurrentColdFetches so
+// several goroutines reliably arrive before the first upstream call
+// completes.
+type blockingFetcher struct {
+	*fakeFetcher
+	started chan struct{}
+	release chan struct{}
+}
+
+func (f *blockingFetcher) GetManifestation(ctx context.Context, manifestationID string) (radiofrance.ManifestationDetails, error) {
+	select {
+	case f.started <- struct{}{}:
+	default:
+	}
+	<-f.release
+	return f.fakeFetcher.GetManifestation(ctx, manifestationID)
+}
+
+func TestResolveAudioURL_DedupesConcurrentColdFetches(t *testing.T) {
+	store := newSyncFakeStore()
+	inner := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
+		"m1": {URL: "https://cdn.example.com/a.mp3"},
+	}}
+	fetcher := &blockingFetcher{fakeFetcher: inner, started: make(chan struct{}, 1), release: make(chan struct{})}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	const n = 10
+	var wg sync.WaitGroup
+	urls := make([]string, n)
+	errs := make([]error, n)
+	wg.Add(n)
+	for i := range n {
+		go func(i int) {
+			defer wg.Done()
+			url, _, _, err := r.ResolveAudioURL(context.Background(), "m1")
+			urls[i] = url
+			errs[i] = err
+		}(i)
+	}
+
+	<-fetcher.started                 // at least one goroutine has entered the upstream call
+	time.Sleep(20 * time.Millisecond) // give the rest time to queue up behind singleflight
+	close(fetcher.release)
+	wg.Wait()
+
+	if inner.calls != 1 {
+		t.Errorf("fetcher.calls = %d, want 1 (concurrent cold requests for the same manifestation should be deduped)", inner.calls)
+	}
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("goroutine %d: ResolveAudioURL: %v", i, err)
+		}
+		if urls[i] != "https://cdn.example.com/a.mp3" {
+			t.Errorf("goroutine %d: url = %q", i, urls[i])
+		}
 	}
 }
 

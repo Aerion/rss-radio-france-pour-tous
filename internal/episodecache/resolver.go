@@ -7,6 +7,8 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
 )
 
@@ -66,6 +68,10 @@ type Resolver struct {
 	// maxAge bounds how long a cached entry is trusted when it carries no
 	// ExpiresAt of its own - see Entry.fresh.
 	maxAge time.Duration
+	// audioSF dedupes concurrent ResolveAudioURL upstream fetches for the
+	// same manifestationID - see its doc comment. Zero value is ready to
+	// use, no initialization needed.
+	audioSF singleflight.Group
 }
 
 // NewResolver creates a Resolver backed by s and f. s is typically a
@@ -239,6 +245,12 @@ func (r *Resolver) cache(ctx context.Context, id string, d radiofrance.Diffusion
 	}
 }
 
+// audioResolution is what the singleflight-deduped part of ResolveAudioURL
+// produces for one manifestationID.
+type audioResolution struct {
+	url, showID, showTitle string
+}
+
 // ResolveAudioURL returns the playable URL for manifestationID, used by
 // the /audio/ redirect. showID/showTitle are whatever was already known
 // about this manifestation (populated by a prior Resolve call during a
@@ -251,6 +263,15 @@ func (r *Resolver) cache(ctx context.Context, id string, d radiofrance.Diffusion
 // play needs the real URL right now, there's nothing to degrade to. This is
 // a deliberate, permanent exception to "upstream concurrency only happens
 // via the enrichment queue".
+//
+// The upstream fetch and cache write are deduped by audioSF: if several
+// requests race on the same cold manifestationID (e.g. a popular episode
+// just went stale), only one actually calls GetManifestation, and every
+// caller gets its result - rather than each firing its own redundant
+// upstream call. A side effect is that on a race, every caller's
+// showID/showTitle attribution comes from whichever caller's entry won the
+// race; since they all read the same store row, in practice that's the
+// same value regardless of which caller wins.
 func (r *Resolver) ResolveAudioURL(ctx context.Context, manifestationID string) (url, showID, showTitle string, err error) {
 	entry, ok, getErr := r.store.Get(ctx, manifestationID)
 	hit := getErr == nil && ok && entry.fresh(r.maxAge)
@@ -259,29 +280,36 @@ func (r *Resolver) ResolveAudioURL(ctx context.Context, manifestationID string) 
 		return entry.URL, entry.ShowID, entry.ShowTitle, nil
 	}
 
-	details, err := r.fetcher.GetManifestation(ctx, manifestationID)
+	v, err, _ := r.audioSF.Do(manifestationID, func() (any, error) {
+		details, err := r.fetcher.GetManifestation(ctx, manifestationID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Preserve whatever show attribution a prior Resolve call already
+		// established for this manifestation, rather than clobbering it
+		// with empty values just because this URL needed refreshing.
+		updated := Entry{
+			ManifestationID:      manifestationID,
+			DiffusionID:          entry.DiffusionID,
+			ShowID:               entry.ShowID,
+			ShowTitle:            entry.ShowTitle,
+			URL:                  details.URL,
+			Duration:             details.Duration,
+			Principal:            details.Principal,
+			DiffusionUpdatedTime: entry.DiffusionUpdatedTime,
+			ExpiresAt:            details.ExpiresAt,
+		}
+		if err := r.store.Upsert(ctx, updated); err != nil {
+			slog.Error("episodecache: failed to cache manifestation", "manifestationID", manifestationID, "error", err)
+		}
+		return audioResolution{url: details.URL, showID: entry.ShowID, showTitle: entry.ShowTitle}, nil
+	})
 	if err != nil {
 		return "", "", "", err
 	}
-
-	// Preserve whatever show attribution a prior Resolve call already
-	// established for this manifestation, rather than clobbering it with
-	// empty values just because this URL needed refreshing.
-	updated := Entry{
-		ManifestationID:      manifestationID,
-		DiffusionID:          entry.DiffusionID,
-		ShowID:               entry.ShowID,
-		ShowTitle:            entry.ShowTitle,
-		URL:                  details.URL,
-		Duration:             details.Duration,
-		Principal:            details.Principal,
-		DiffusionUpdatedTime: entry.DiffusionUpdatedTime,
-		ExpiresAt:            details.ExpiresAt,
-	}
-	if err := r.store.Upsert(ctx, updated); err != nil {
-		slog.Error("episodecache: failed to cache manifestation", "manifestationID", manifestationID, "error", err)
-	}
-	return details.URL, entry.ShowID, entry.ShowTitle, nil
+	res := v.(audioResolution)
+	return res.url, res.showID, res.showTitle, nil
 }
 
 // ResolveImage returns the cover image URL to use for d, implementing
