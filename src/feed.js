@@ -102,6 +102,18 @@ export const buildFeed = ({ diffusions, showDetails }, nextPageUrl) => {
       return "";
     }
 
+    if (diffusion.createdTime * 1000 > Date.now()) {
+      // Radio France pre-schedules rerun slots (e.g. summer replacement
+      // programming) weeks ahead in its CMS, and createdTime on those
+      // diffusions is the future slot's own timestamp rather than a past
+      // broadcast date. A future-dated pubDate confuses podcast clients
+      // (observed: AntennaPod displaying the current date instead of the
+      // real, future one) - simplest fix is to not publish the episode
+      // until its scheduled time has actually passed.
+      console.log(`Item ${diffusion.id} is scheduled in the future (createdTime=${diffusion.createdTime}), skipping`);
+      return "";
+    }
+
     let guid = diffusion.id;
     if (new Date(diffusion.createdTime * 1000) <= new Date("Sep 12 2022")) {
       // backward compatibility: keep old id generation.

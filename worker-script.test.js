@@ -154,6 +154,31 @@ describe("buildFeed", () => {
       expect(xml).toContain("&quot;Cool&quot;");
     });
   });
+
+  describe("future-scheduled diffusions", () => {
+    function diffusionWithManifestation(id, createdTime) {
+      return {
+        id,
+        title: `Episode ${id}`,
+        path: `https://example.com/${id}`,
+        createdTime,
+        relationships: { manifestations: [`manifestation-${id}`] },
+      };
+    }
+
+    it("skips diffusions whose createdTime is in the future", () => {
+      const past = diffusionWithManifestation("d1", 1700000000);
+      const future = diffusionWithManifestation("d2", Math.floor(Date.now() / 1000) + 24 * 60 * 60);
+      const showDiffusions = {
+        diffusions: [past, future],
+        showDetails: { title: "Test show", path: "https://example.com", standfirst: "" },
+      };
+
+      const xml = buildFeed(showDiffusions, null);
+      expect((xml.match(/<item>/g) || []).length).toBe(1);
+      expect(xml).not.toContain("Episode d2");
+    });
+  });
 });
 
 // ── getShowDiffusions ─────────────────────────────────────────────────────────
