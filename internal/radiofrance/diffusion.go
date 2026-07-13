@@ -34,11 +34,5 @@ func (c *Client) GetDiffusionManifestations(ctx context.Context, diffusionID str
 		return nil, err
 	}
 
-	manifestations := make(map[string]ManifestationDetails, len(resp.Included.Manifestations))
-	for id, raw := range resp.Included.Manifestations {
-		if details := raw.toDetails(); details.URL != "" {
-			manifestations[id] = details
-		}
-	}
-	return manifestations, nil
+	return toManifestationDetails(resp.Included.Manifestations), nil
 }

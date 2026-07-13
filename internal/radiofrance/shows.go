@@ -33,12 +33,7 @@ func (c *Client) GetShowDiffusions(ctx context.Context, showID string, page int)
 		diffusions = append(diffusions, item.Diffusions)
 	}
 
-	manifestations := make(map[string]ManifestationDetails, len(resp.Included.Manifestations))
-	for id, raw := range resp.Included.Manifestations {
-		if details := raw.toDetails(); details.URL != "" {
-			manifestations[id] = details
-		}
-	}
+	manifestations := toManifestationDetails(resp.Included.Manifestations)
 
 	var nextPageIdx *int
 	if resp.Links.Next != "" {

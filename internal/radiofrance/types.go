@@ -239,6 +239,21 @@ func (m rawManifestation) toDetails() ManifestationDetails {
 	return details
 }
 
+// toManifestationDetails converts raw - an Included.Manifestations map, as
+// found on diffusionsResponse and diffusionManifestationsResponse - to the
+// exported ManifestationDetails shape, dropping any entry with no URL
+// (toDetails' zero-value case, e.g. a manifestation the API listed but left
+// otherwise empty).
+func toManifestationDetails(raw map[string]rawManifestation) map[string]ManifestationDetails {
+	manifestations := make(map[string]ManifestationDetails, len(raw))
+	for id, m := range raw {
+		if details := m.toDetails(); details.URL != "" {
+			manifestations[id] = details
+		}
+	}
+	return manifestations
+}
+
 // ManifestationDetails is a manifestation's playback-relevant fields.
 type ManifestationDetails struct {
 	URL       string
