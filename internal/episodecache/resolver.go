@@ -146,50 +146,80 @@ func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radi
 // enrichManifestation resolves and caches d's principal manifestation,
 // run by an Enricher worker after Resolve enqueues it on a cache miss.
 // Reports whether a principal manifestation was found - see the job
-// interface's doc comment for how that's used.
+// interface's doc comment for how that's used. Tries three strategies in
+// order of ascending upstream cost, returning as soon as one succeeds:
+// (1) recheck already-known data - free; (2) one bulk fetch covering every
+// sibling manifestation - cheap; (3) fetch whatever's still missing one at
+// a time - the expensive last resort.
 func (r *Resolver) enrichManifestation(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) bool {
 	candidates := d.Relationships.Manifestations
 	if len(candidates) == 0 {
 		return false
 	}
 
-	// A concurrent request may have already resolved this since it was
-	// enqueued - recheck cheaply before doing any upstream work.
+	if r.recheckAlreadyKnownPrincipal(ctx, showID, showTitle, d, candidates, included) {
+		return true
+	}
+
+	fetched, foundPrincipal := r.enrichFromBulkFetch(ctx, showID, showTitle, d)
+	if foundPrincipal {
+		return true
+	}
+
+	if r.enrichRemainingCandidatesOneByOne(ctx, showID, showTitle, d, candidates, fetched) {
+		return true
+	}
+
+	slog.Warn("episodecache: no candidate manifestation could be resolved, feed item will have no duration",
+		"diffusionID", d.ID)
+	return false
+}
+
+// recheckAlreadyKnownPrincipal reports whether d's principal manifestation
+// can be resolved from data already in hand - included, or the cache - with
+// no upstream call. A concurrent request may have already resolved this
+// since Resolve enqueued the job that led here, so it's worth checking
+// cheaply before doing any upstream work.
+func (r *Resolver) recheckAlreadyKnownPrincipal(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, candidates []string, included map[string]radiofrance.ManifestationDetails) bool {
 	if id, m, ok := findPrincipal(candidates, included); ok {
 		r.cache(ctx, id, d, showID, showTitle, m)
 		return true
 	}
-	if _, _, ok := r.findCachedPrincipal(ctx, candidates, d.UpdatedTime); ok {
-		return true
-	}
+	_, _, ok := r.findCachedPrincipal(ctx, candidates, d.UpdatedTime)
+	return ok
+}
 
-	// One call resolves every sibling manifestation Radio France inlines
-	// for this diffusion (coverage isn't guaranteed exhaustive - see
-	// GetDiffusionManifestations), instead of up to len(candidates)
-	// separate GetManifestation calls.
+// enrichFromBulkFetch fetches and caches every sibling manifestation Radio
+// France inlines for d in one call (coverage isn't guaranteed exhaustive -
+// see GetDiffusionManifestations), instead of up to len(candidates)
+// separate GetManifestation calls. Returns what was fetched (so
+// enrichRemainingCandidatesOneByOne can skip re-fetching it) and whether a
+// principal manifestation was among them.
+func (r *Resolver) enrichFromBulkFetch(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion) (fetched map[string]radiofrance.ManifestationDetails, foundPrincipal bool) {
 	fetched, err := r.fetcher.GetDiffusionManifestations(ctx, d.ID)
 	if err != nil {
 		slog.Warn("episodecache: failed to fetch diffusion manifestations", "diffusionID", d.ID, "error", err)
-		fetched = nil
+		return nil, false
 	}
 
-	foundPrincipal := false
 	for id, details := range fetched {
 		r.cache(ctx, id, d, showID, showTitle, details)
 		if details.Principal {
 			foundPrincipal = true
 		}
 	}
-	if foundPrincipal {
-		return true
-	}
+	return fetched, foundPrincipal
+}
 
-	// Whatever's still missing from the bulk response, resolve one at a
-	// time, stopping at the first principal found - the same rescue path
-	// used before GetDiffusionManifestations existed.
+// enrichRemainingCandidatesOneByOne fetches and caches whatever candidate
+// isn't already in alreadyFetched, one at a time, stopping at the first
+// principal found - the same rescue path used before
+// GetDiffusionManifestations existed, kept as the last resort for a
+// diffusion whose bulk response didn't cover its principal.
+func (r *Resolver) enrichRemainingCandidatesOneByOne(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, candidates []string, alreadyFetched map[string]radiofrance.ManifestationDetails) bool {
 	for _, id := range candidates {
-		if _, ok := fetched[id]; ok {
-			continue // already resolved (and cached) above
+		if _, ok := alreadyFetched[id]; ok {
+			continue // already resolved (and cached) by enrichFromBulkFetch
 		}
 		details, err := r.fetcher.GetManifestation(ctx, id)
 		if err != nil {
@@ -201,9 +231,6 @@ func (r *Resolver) enrichManifestation(ctx context.Context, showID, showTitle st
 			return true
 		}
 	}
-
-	slog.Warn("episodecache: no candidate manifestation could be resolved, feed item will have no duration",
-		"diffusionID", d.ID)
 	return false
 }
 
