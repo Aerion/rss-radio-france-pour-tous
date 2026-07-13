@@ -72,6 +72,18 @@ func TestObserveRequest_RecordsRadioFranceMetrics(t *testing.T) {
 	}
 }
 
+func TestObserveRequestStarted_RecordsRadioFranceMetric(t *testing.T) {
+	o := newTestObservability(t)
+	ctx := context.Background()
+	o.ObserveRequestStarted(ctx, "diffusions")
+	o.ObserveRequestStarted(ctx, "diffusions")
+
+	body := scrapeMetrics(t, o)
+	if !strings.Contains(body, `radiofrance_api_requests_started_total{endpoint="diffusions"} 2`) {
+		t.Errorf("expected a started counter of 2 for diffusions, got:\n%s", body)
+	}
+}
+
 func TestObserveAnalyticsEvent_RecordsOutcome(t *testing.T) {
 	o := newTestObservability(t)
 	o.ObserveAnalyticsEvent("written")

@@ -165,6 +165,16 @@ type diffusionResponse struct {
 	} `json:"data"`
 }
 
+// diffusionManifestationsResponse is the raw shape of GET
+// diffusions/{id}?include=manifestations - same Included.Manifestations
+// shape as diffusionsResponse, minus the fields GetDiffusionManifestations
+// doesn't need.
+type diffusionManifestationsResponse struct {
+	Included struct {
+		Manifestations map[string]rawManifestation `json:"manifestations"`
+	} `json:"included"`
+}
+
 // manifestationResponse is the raw shape of GET manifestations/{id}.
 type manifestationResponse struct {
 	Data struct {

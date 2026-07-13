@@ -37,8 +37,9 @@ type Observability struct {
 	httpRequests        metric.Int64Counter
 	httpRequestDuration metric.Float64Histogram
 
-	radioFranceRequests metric.Int64Counter
-	radioFranceDuration metric.Float64Histogram
+	radioFranceRequestsStarted metric.Int64Counter
+	radioFranceRequests        metric.Int64Counter
+	radioFranceDuration        metric.Float64Histogram
 
 	analyticsEvents metric.Int64Counter
 
@@ -75,6 +76,11 @@ func New(serviceName string) (*Observability, error) {
 	if err != nil {
 		return nil, err
 	}
+	radioFranceRequestsStarted, err := meter.Int64Counter("radiofrance_api_requests_started_total",
+		metric.WithDescription("Outbound calls to the Radio France API dispatched, labeled by logical endpoint - recorded before the call completes, so it can be compared against radiofrance_api_requests_total to spot calls that are hanging."))
+	if err != nil {
+		return nil, err
+	}
 	radioFranceRequests, err := meter.Int64Counter("radiofrance_api_requests_total",
 		metric.WithDescription("Total outbound calls to the Radio France API, labeled by logical endpoint and outcome."))
 	if err != nil {
@@ -98,14 +104,15 @@ func New(serviceName string) (*Observability, error) {
 	}
 
 	return &Observability{
-		promRegistry:              promRegistry,
-		meterProvider:             meterProvider,
-		httpRequests:              httpRequests,
-		httpRequestDuration:       httpRequestDuration,
-		radioFranceRequests:       radioFranceRequests,
-		radioFranceDuration:       radioFranceDuration,
-		analyticsEvents:           analyticsEvents,
-		manifestationCacheLookups: manifestationCacheLookups,
+		promRegistry:               promRegistry,
+		meterProvider:              meterProvider,
+		httpRequests:               httpRequests,
+		httpRequestDuration:        httpRequestDuration,
+		radioFranceRequestsStarted: radioFranceRequestsStarted,
+		radioFranceRequests:        radioFranceRequests,
+		radioFranceDuration:        radioFranceDuration,
+		analyticsEvents:            analyticsEvents,
+		manifestationCacheLookups:  manifestationCacheLookups,
 	}, nil
 }
 
@@ -121,6 +128,11 @@ func (o *Observability) Shutdown(ctx context.Context) error {
 		return fmt.Errorf("shutting down meter provider: %w", err)
 	}
 	return nil
+}
+
+// ObserveRequestStarted implements radiofrance.RequestObserver.
+func (o *Observability) ObserveRequestStarted(ctx context.Context, endpoint string) {
+	o.radioFranceRequestsStarted.Add(ctx, 1, metric.WithAttributes(attribute.String("endpoint", endpoint)))
 }
 
 // ObserveRequest implements radiofrance.RequestObserver.

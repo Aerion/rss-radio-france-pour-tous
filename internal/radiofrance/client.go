@@ -26,6 +26,11 @@ const maxErrorBodySize = 4 << 10
 // than just the call's own outcome/duration) so an implementation can
 // correlate the recorded metric with the current request.
 type RequestObserver interface {
+	// ObserveRequestStarted is called immediately before a call is
+	// dispatched, letting dashboards see calls as they're fired rather
+	// than only once they complete (see ObserveRequest) - the gap between
+	// the two is what surfaces calls that are hanging.
+	ObserveRequestStarted(ctx context.Context, endpoint string)
 	ObserveRequest(ctx context.Context, endpoint string, ok bool, duration time.Duration)
 }
 
@@ -72,6 +77,9 @@ func (e *APIError) Error() string {
 // short, low-cardinality label (e.g. "diffusions", "manifestation") used
 // for call metrics - not the raw path, which contains IDs.
 func (c *Client) doGet(ctx context.Context, endpoint, path string, out any) error {
+	if c.observer != nil {
+		c.observer.ObserveRequestStarted(ctx, endpoint)
+	}
 	start := time.Now()
 	err := c.get(ctx, path, out)
 	if c.observer != nil {
