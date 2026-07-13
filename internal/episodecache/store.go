@@ -78,7 +78,17 @@ func (s *Store) GetMany(ctx context.Context, manifestationIDs []string) (map[str
 	return entries, nil
 }
 
-// Upsert inserts or replaces the cached entry for e.ManifestationID.
+// Upsert inserts or replaces the cached entry for e.ManifestationID. A
+// conflicting row whose content already matches e is left untouched
+// (including its fetched_at) rather than rewritten - Resolver.cache is
+// called on every diffusion resolved straight from included data, which on
+// a busy show is most feed rebuilds, so most calls here would otherwise be
+// a no-op write of identical values. The one cost is that a manifestation
+// whose content genuinely never changes won't have its fetched_at
+// refreshed just by being reconfirmed - that only matters for
+// Entry.fresh's maxAge fallback (itself only consulted when included
+// *doesn't* have the answer), and even then just costs one extra,
+// harmless re-verification once maxAge elapses.
 func (s *Store) Upsert(ctx context.Context, e Entry) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO manifestation_cache
@@ -93,7 +103,15 @@ func (s *Store) Upsert(ctx context.Context, e Entry) error {
 			principal = excluded.principal,
 			diffusion_updated_time = excluded.diffusion_updated_time,
 			expires_at = excluded.expires_at,
-			fetched_at = excluded.fetched_at`,
+			fetched_at = excluded.fetched_at
+		WHERE manifestation_cache.diffusion_id IS DISTINCT FROM excluded.diffusion_id
+		   OR manifestation_cache.show_id IS DISTINCT FROM excluded.show_id
+		   OR manifestation_cache.show_title IS DISTINCT FROM excluded.show_title
+		   OR manifestation_cache.url IS DISTINCT FROM excluded.url
+		   OR manifestation_cache.duration_seconds IS DISTINCT FROM excluded.duration_seconds
+		   OR manifestation_cache.principal IS DISTINCT FROM excluded.principal
+		   OR manifestation_cache.diffusion_updated_time IS DISTINCT FROM excluded.diffusion_updated_time
+		   OR manifestation_cache.expires_at IS DISTINCT FROM excluded.expires_at`,
 		e.ManifestationID, e.DiffusionID, e.ShowID, e.ShowTitle, e.URL,
 		durationToSeconds(e.Duration), e.Principal, e.DiffusionUpdatedTime, e.ExpiresAt)
 	if err != nil {
