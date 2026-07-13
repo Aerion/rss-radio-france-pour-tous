@@ -26,6 +26,7 @@ type store interface {
 // fetcher is the subset of *radiofrance.Client's behavior Resolver needs.
 type fetcher interface {
 	GetManifestation(ctx context.Context, manifestationID string) (radiofrance.ManifestationDetails, error)
+	GetDiffusionManifestations(ctx context.Context, diffusionID string) (map[string]radiofrance.ManifestationDetails, error)
 	GetDiffusion(ctx context.Context, diffusionID string) (radiofrance.Diffusion, error)
 }
 
@@ -44,22 +45,37 @@ const (
 
 // Resolver turns a diffusion (or a bare manifestation ID) into playback
 // details, consulting the cache before falling back to the Radio France
-// API. Implements both feed.ManifestationResolver and
-// httpapi.AudioResolver.
+// API. Implements feed.ManifestationResolver, feed.ImageResolver,
+// feed.DescriptionResolver, httpapi.AudioResolver, and
+// httpapi.EnrichmentStatus.
+//
+// Resolve/ResolveImage/ResolveDescription never make an upstream call
+// themselves: on a cache miss they enqueue a background job on enricher
+// and return a degraded-but-immediate fallback (see each method's doc
+// comment), so a request never blocks on Radio France. The actual upstream
+// work happens in enrichManifestation/enrichOrigin, run by an Enricher
+// worker some time later, which fills in the cache so the *next* request
+// for the same episode is a hit. ResolveAudioURL is the one exception -
+// see its own doc comment.
 type Resolver struct {
 	store   store
 	fetcher fetcher
 	// observer is nil-able; lookups are simply unrecorded if it's nil.
 	observer CacheObserver
+	enricher *Enricher
+	// maxAge bounds how long a cached entry is trusted when it carries no
+	// ExpiresAt of its own - see Entry.fresh.
+	maxAge time.Duration
 }
 
 // NewResolver creates a Resolver backed by s and f. s is typically a
 // *Store; accepting the narrower unexported interface here (rather than
 // *Store concretely) is what lets tests inject an in-memory fake without
-// exporting that seam. observer may be nil to skip recording cache
-// lookup metrics.
-func NewResolver(s store, f fetcher, observer CacheObserver) *Resolver {
-	return &Resolver{store: s, fetcher: f, observer: observer}
+// exporting that seam. observer may be nil to skip recording cache lookup
+// metrics. enricher receives background enrichment jobs on a cache miss -
+// see the Resolver doc comment.
+func NewResolver(s store, f fetcher, observer CacheObserver, enricher *Enricher, maxAge time.Duration) *Resolver {
+	return &Resolver{store: s, fetcher: f, observer: observer, enricher: enricher, maxAge: maxAge}
 }
 
 // observeCacheLookup records whether a single store.Get call yielded a
@@ -79,23 +95,21 @@ func (r *Resolver) observeCacheLookup(ctx context.Context, hit bool) {
 // for d's enclosure/itunes:duration, used while building a show's feed.
 // included is whatever manifestation data came back inline with the
 // diffusions page (see radiofrance.ShowDiffusions.Manifestations) - not
-// exhaustive. url is "" only when every candidate manifestation failed to
-// resolve, in which case the caller falls back to the legacy /audio/
-// redirect for this item.
+// exhaustive. url is "" when the principal manifestation isn't yet known -
+// enrichManifestation is queued to resolve it in the background, and the
+// caller falls back to the legacy /audio/ redirect for this item in the
+// meantime (which resolves it live - see ResolveAudioURL).
 //
 // Prefers the manifestation flagged Principal by the API over d's default
 // (array position 0): live samples show non-principal manifestations carry
 // a real expiration date ~97% of the time, while the principal one never
 // does - so this is a correctness concern (dead links), not just cosmetic
-// preference. Tries, in order of cost: (1) principal already present in
-// included - free; (2) principal already cached from a previous
-// resolution - free; (3) live-fetch whichever siblings aren't already
-// known, stopping at the first principal found. Only degrades to d's
-// default manifestation (with no known URL or duration) if every candidate
-// failed to fetch, which should be rare.
-//
-// Never returns an error to the caller: any upstream failure is logged and
-// degrades gracefully, so one bad episode never fails the whole feed.
+// preference. Tries, in order of cost, entirely from data already in hand:
+// (1) principal already present in included - free; (2) principal already
+// cached from a previous resolution - free. Only on both missing does it
+// degrade to d's default manifestation (with no known URL or duration),
+// enqueuing background enrichment so a subsequent request resolves it for
+// real.
 func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) (manifestationID, url string, duration time.Duration) {
 	candidates := d.Relationships.Manifestations
 	if len(candidates) == 0 {
@@ -111,10 +125,57 @@ func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radi
 		return id, e.URL, e.Duration
 	}
 
-	fallbackID, fallbackURL, fallbackDuration := "", "", time.Duration(0)
+	r.enricher.enqueue(manifestationKey(d.ID), manifestationJob{showID: showID, showTitle: showTitle, d: d, included: included})
+	return d.ManifestationID(), "", 0
+}
+
+// enrichManifestation resolves and caches d's principal manifestation,
+// run by an Enricher worker after Resolve enqueues it on a cache miss.
+// Reports whether a principal manifestation was found - see the job
+// interface's doc comment for how that's used.
+func (r *Resolver) enrichManifestation(ctx context.Context, showID, showTitle string, d radiofrance.Diffusion, included map[string]radiofrance.ManifestationDetails) bool {
+	candidates := d.Relationships.Manifestations
+	if len(candidates) == 0 {
+		return false
+	}
+
+	// A concurrent request may have already resolved this since it was
+	// enqueued - recheck cheaply before doing any upstream work.
+	if id, m, ok := findPrincipal(candidates, included); ok {
+		r.cache(ctx, id, d, showID, showTitle, m)
+		return true
+	}
+	if _, _, ok := r.findCachedPrincipal(ctx, candidates, d.UpdatedTime); ok {
+		return true
+	}
+
+	// One call resolves every sibling manifestation Radio France inlines
+	// for this diffusion (coverage isn't guaranteed exhaustive - see
+	// GetDiffusionManifestations), instead of up to len(candidates)
+	// separate GetManifestation calls.
+	fetched, err := r.fetcher.GetDiffusionManifestations(ctx, d.ID)
+	if err != nil {
+		slog.Warn("episodecache: failed to fetch diffusion manifestations", "diffusionID", d.ID, "error", err)
+		fetched = nil
+	}
+
+	foundPrincipal := false
+	for id, details := range fetched {
+		r.cache(ctx, id, d, showID, showTitle, details)
+		if details.Principal {
+			foundPrincipal = true
+		}
+	}
+	if foundPrincipal {
+		return true
+	}
+
+	// Whatever's still missing from the bulk response, resolve one at a
+	// time, stopping at the first principal found - the same rescue path
+	// used before GetDiffusionManifestations existed.
 	for _, id := range candidates {
-		if _, known := included[id]; known {
-			continue // already checked above, wasn't principal
+		if _, ok := fetched[id]; ok {
+			continue // already resolved (and cached) above
 		}
 		details, err := r.fetcher.GetManifestation(ctx, id)
 		if err != nil {
@@ -123,19 +184,13 @@ func (r *Resolver) Resolve(ctx context.Context, showID, showTitle string, d radi
 		}
 		r.cache(ctx, id, d, showID, showTitle, details)
 		if details.Principal {
-			return id, details.URL, details.Duration
+			return true
 		}
-		if fallbackID == "" {
-			fallbackID, fallbackURL, fallbackDuration = id, details.URL, details.Duration
-		}
-	}
-	if fallbackID != "" {
-		return fallbackID, fallbackURL, fallbackDuration
 	}
 
 	slog.Warn("episodecache: no candidate manifestation could be resolved, feed item will have no duration",
 		"diffusionID", d.ID)
-	return d.ManifestationID(), "", 0
+	return false
 }
 
 // findPrincipal returns the first of candidates flagged Principal in
@@ -154,7 +209,7 @@ func findPrincipal(candidates []string, included map[string]radiofrance.Manifest
 func (r *Resolver) findCachedPrincipal(ctx context.Context, candidates []string, diffusionUpdatedTime int64) (string, Entry, bool) {
 	for _, id := range candidates {
 		e, ok, err := r.store.Get(ctx, id)
-		hit := err == nil && ok && e.Principal && e.DiffusionUpdatedTime == diffusionUpdatedTime && e.fresh()
+		hit := err == nil && ok && e.Principal && e.DiffusionUpdatedTime == diffusionUpdatedTime && e.fresh(r.maxAge)
 		r.observeCacheLookup(ctx, hit)
 		if hit {
 			return id, e, true
@@ -185,9 +240,16 @@ func (r *Resolver) cache(ctx context.Context, id string, d radiofrance.Diffusion
 // about this manifestation (populated by a prior Resolve call during a
 // feed build) - "" if this manifestation has never been seen by Resolve,
 // e.g. an old link from before this cache existed.
+//
+// Unlike Resolve/ResolveImage/ResolveDescription, this makes a synchronous
+// live call on a cache miss rather than enqueuing background enrichment:
+// it isn't building a feed with a degradable fallback - a listener clicking
+// play needs the real URL right now, there's nothing to degrade to. This is
+// a deliberate, permanent exception to "upstream concurrency only happens
+// via the enrichment queue".
 func (r *Resolver) ResolveAudioURL(ctx context.Context, manifestationID string) (url, showID, showTitle string, err error) {
 	entry, ok, getErr := r.store.Get(ctx, manifestationID)
-	hit := getErr == nil && ok && entry.fresh()
+	hit := getErr == nil && ok && entry.fresh(r.maxAge)
 	r.observeCacheLookup(ctx, hit)
 	if hit {
 		return entry.URL, entry.ShowID, entry.ShowTitle, nil
@@ -229,7 +291,8 @@ func (r *Resolver) ResolveAudioURL(ctx context.Context, manifestationID string) 
 // resolves the origin broadcast's MainImage - cached indefinitely in
 // Postgres, since the origin diffusion's editorial content and artwork are
 // fixed once the episode has aired, unlike a manifestation's playable URL
-// which can expire.
+// which can expire. On a cache miss, enrichOrigin is queued to resolve it
+// in the background and this falls back to DiffusionImageURL(d) for now.
 func (r *Resolver) ResolveImage(ctx context.Context, d radiofrance.Diffusion) string {
 	if d.MainImage != "" {
 		return radiofrance.DiffusionImageURL(d)
@@ -240,65 +303,110 @@ func (r *Resolver) ResolveImage(ctx context.Context, d radiofrance.Diffusion) st
 		return radiofrance.DiffusionImageURL(d)
 	}
 
-	if mainImage := r.resolveOriginMainImage(ctx, originID); mainImage != "" {
-		return radiofrance.ImageURL(nil, mainImage)
-	}
-	return radiofrance.DiffusionImageURL(d)
-}
-
-// resolveOriginMainImage returns originID's MainImage (possibly ""),
-// consulting the cache before falling back to a live GetDiffusion call.
-// Failures are logged and degrade to "", same as the rest of this package.
-func (r *Resolver) resolveOriginMainImage(ctx context.Context, originID string) string {
 	if mainImage, ok, err := r.store.GetOriginImage(ctx, originID); err == nil && ok {
 		r.observeCacheLookup(ctx, true)
-		return mainImage
+		if mainImage != "" {
+			return radiofrance.ImageURL(nil, mainImage)
+		}
+		return radiofrance.DiffusionImageURL(d)
 	} else if err != nil {
 		slog.Warn("episodecache: failed to read origin diffusion image cache", "diffusionID", originID, "error", err)
 	}
 	r.observeCacheLookup(ctx, false)
 
-	origin, err := r.fetcher.GetDiffusion(ctx, originID)
-	if err != nil {
-		slog.Warn("episodecache: failed to fetch origin diffusion for image resolution", "diffusionID", originID, "error", err)
-		return ""
-	}
-
-	if err := r.store.UpsertOriginImage(ctx, originID, origin.MainImage); err != nil {
-		slog.Error("episodecache: failed to cache origin diffusion image", "diffusionID", originID, "error", err)
-	}
-	return origin.MainImage
+	r.enricher.enqueue(originKey(originID), originJob{originID: originID})
+	return radiofrance.DiffusionImageURL(d)
 }
 
 // ResolveDescription returns the (bodyMarkdown, standfirst) pair to use for
-// d's feed description, implementing feed.DescriptionResolver. originCreatedTime
-// is the origin diffusion's own CreatedTime (its original broadcast date) as
-// a Unix timestamp, or 0 if d isn't a rerun or the origin couldn't be
-// resolved at all - callers use it to flag a rerun in the feed, independent
-// of whether the origin's bodyMarkdown ended up being usable.
+// d's feed description, implementing feed.DescriptionResolver.
+// originCreatedTime is the origin diffusion's own CreatedTime (its original
+// broadcast date) as a Unix timestamp, taken from the cache, or 0 if d
+// isn't a rerun or the origin hasn't been resolved yet - callers use it to
+// flag a rerun in the feed, independent of whether the origin's
+// bodyMarkdown ended up being usable.
 //
 // Unlike a rerun's MainImage (see ResolveImage), a rerun's own bodyMarkdown
 // is rarely blank - but live samples show it's often a flattened,
 // auto-derived copy of the origin broadcast's real editorial notes, stripped
 // of links, bold, lists, and embed shortcodes (and observed once to even
 // swap out a reference the origin had). For a rerun, this prefers the origin
-// diffusion's bodyMarkdown/standfirst - cached indefinitely in Postgres,
-// same rationale as ResolveImage - falling back to d's own fields only if
-// the origin's turn out to be blank.
+// diffusion's cached bodyMarkdown/standfirst - same rationale as
+// ResolveImage - falling back to d's own fields if the origin's turn out to
+// be blank or aren't cached yet. On a cache miss, enrichOrigin is queued to
+// resolve it in the background (deduped with any job ResolveImage already
+// queued for the same origin - see enrichOrigin).
 func (r *Resolver) ResolveDescription(ctx context.Context, d radiofrance.Diffusion) (bodyMarkdown, standfirst string, originCreatedTime int64) {
 	originID := d.OriginDiffusionID()
 	if originID == "" {
 		return d.BodyMarkdown, d.Standfirst, 0
 	}
 
-	body, sf, createdTime, ok := r.resolveOriginBody(ctx, originID)
-	if !ok {
-		return d.BodyMarkdown, d.Standfirst, 0
+	if body, sf, ct, ok, err := r.store.GetOriginBody(ctx, originID); err == nil && ok {
+		r.observeCacheLookup(ctx, true)
+		if isBlank(body) {
+			return d.BodyMarkdown, d.Standfirst, ct
+		}
+		return body, sf, ct
+	} else if err != nil {
+		slog.Warn("episodecache: failed to read origin diffusion body cache", "diffusionID", originID, "error", err)
 	}
-	if isBlank(body) {
-		return d.BodyMarkdown, d.Standfirst, createdTime
+	r.observeCacheLookup(ctx, false)
+
+	r.enricher.enqueue(originKey(originID), originJob{originID: originID})
+	return d.BodyMarkdown, d.Standfirst, 0
+}
+
+// enrichOrigin resolves and caches originID's MainImage and
+// bodyMarkdown/standfirst/createdTime in a single GetDiffusion call, run by
+// an Enricher worker after ResolveImage/ResolveDescription enqueue it on a
+// cache miss - merging what used to be two separate live-fetch paths into
+// one upstream call. Reports whether the origin diffusion was
+// fetched successfully.
+func (r *Resolver) enrichOrigin(ctx context.Context, originID string) bool {
+	// A concurrent request may have already resolved this since it was
+	// enqueued - recheck cheaply before doing any upstream work. Only skip
+	// entirely once both are cached; if just one is missing, it's still
+	// worth the one GetDiffusion call to fill in the rest.
+	_, imageCached, imageErr := r.store.GetOriginImage(ctx, originID)
+	_, _, _, bodyCached, bodyErr := r.store.GetOriginBody(ctx, originID)
+	if imageErr == nil && imageCached && bodyErr == nil && bodyCached {
+		return true
 	}
-	return body, sf, createdTime
+
+	origin, err := r.fetcher.GetDiffusion(ctx, originID)
+	if err != nil {
+		slog.Warn("episodecache: failed to fetch origin diffusion", "diffusionID", originID, "error", err)
+		return false
+	}
+
+	if err := r.store.UpsertOriginImage(ctx, originID, origin.MainImage); err != nil {
+		slog.Error("episodecache: failed to cache origin diffusion image", "diffusionID", originID, "error", err)
+	}
+	if err := r.store.UpsertOriginBody(ctx, originID, origin.BodyMarkdown, origin.Standfirst, origin.CreatedTime); err != nil {
+		slog.Error("episodecache: failed to cache origin diffusion body", "diffusionID", originID, "error", err)
+	}
+	return true
+}
+
+// AllResolved reports whether every diffusion in diffusions (and, for
+// reruns, its origin) has finished background enrichment - implements
+// httpapi.EnrichmentStatus (declared there to keep that package decoupled
+// from episodecache), letting a degraded cached feed page be invalidated
+// as soon as it catches up instead of waiting out the feed cache's TTL.
+// Deliberately cheap: just in-memory pending-set lookups (see
+// Enricher.isPending), no DB reads or upstream calls, so it's fine to call
+// on every cache hit for a page that was degraded when it was cached.
+func (r *Resolver) AllResolved(diffusions []radiofrance.Diffusion) bool {
+	for _, d := range diffusions {
+		if r.enricher.isPending(manifestationKey(d.ID)) {
+			return false
+		}
+		if originID := d.OriginDiffusionID(); originID != "" && r.enricher.isPending(originKey(originID)) {
+			return false
+		}
+	}
+	return true
 }
 
 // isBlank reports whether s is empty or contains nothing but
@@ -310,31 +418,4 @@ func isBlank(s string) bool {
 	return strings.TrimFunc(s, func(r rune) bool {
 		return unicode.IsSpace(r) || r == '.'
 	}) == ""
-}
-
-// resolveOriginBody returns originID's (bodyMarkdown, standfirst,
-// createdTime), consulting the cache before falling back to a live
-// GetDiffusion call. ok is false only when the origin diffusion couldn't be
-// resolved at all (upstream failure); a successfully resolved origin with no
-// real content of its own still reports ok=true with blank fields, so
-// callers can still use its createdTime.
-func (r *Resolver) resolveOriginBody(ctx context.Context, originID string) (bodyMarkdown, standfirst string, createdTime int64, ok bool) {
-	if body, sf, ct, cached, err := r.store.GetOriginBody(ctx, originID); err == nil && cached {
-		r.observeCacheLookup(ctx, true)
-		return body, sf, ct, true
-	} else if err != nil {
-		slog.Warn("episodecache: failed to read origin diffusion body cache", "diffusionID", originID, "error", err)
-	}
-	r.observeCacheLookup(ctx, false)
-
-	origin, err := r.fetcher.GetDiffusion(ctx, originID)
-	if err != nil {
-		slog.Warn("episodecache: failed to fetch origin diffusion for description resolution", "diffusionID", originID, "error", err)
-		return "", "", 0, false
-	}
-
-	if err := r.store.UpsertOriginBody(ctx, originID, origin.BodyMarkdown, origin.Standfirst, origin.CreatedTime); err != nil {
-		slog.Error("episodecache: failed to cache origin diffusion body", "diffusionID", originID, "error", err)
-	}
-	return origin.BodyMarkdown, origin.Standfirst, origin.CreatedTime, true
 }

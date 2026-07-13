@@ -9,6 +9,16 @@ import (
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
 )
 
+const testMaxAge = 30 * 24 * time.Hour
+
+// newTestEnricher returns an Enricher with a generous queue that's never
+// drained by a worker (no Run call) - good enough for tests that only care
+// whether Resolve/ResolveImage/ResolveDescription enqueued the right job,
+// not for what a worker would do with it.
+func newTestEnricher() *Enricher {
+	return NewEnricher(100, time.Second, nil)
+}
+
 // fakeStore is an in-memory store for testing Resolver's logic without a
 // real database.
 type fakeStore struct {
@@ -90,6 +100,10 @@ type fakeFetcher struct {
 	calls   int
 	callIDs []string
 
+	diffusionManifestations      map[string]map[string]radiofrance.ManifestationDetails
+	diffusionManifestationsErr   error
+	diffusionManifestationsCalls int
+
 	diffusions     map[string]radiofrance.Diffusion
 	diffusionErr   error
 	diffusionCalls int
@@ -107,6 +121,14 @@ func (f *fakeFetcher) GetManifestation(ctx context.Context, manifestationID stri
 		return radiofrance.ManifestationDetails{}, f.err
 	}
 	return f.details[manifestationID], nil
+}
+
+func (f *fakeFetcher) GetDiffusionManifestations(ctx context.Context, diffusionID string) (map[string]radiofrance.ManifestationDetails, error) {
+	f.diffusionManifestationsCalls++
+	if f.diffusionManifestationsErr != nil {
+		return nil, f.diffusionManifestationsErr
+	}
+	return f.diffusionManifestations[diffusionID], nil
 }
 
 func (f *fakeFetcher) GetDiffusion(ctx context.Context, diffusionID string) (radiofrance.Diffusion, error) {
@@ -137,10 +159,12 @@ func diffusionWithManifestation(id, manifestationID string, updatedTime int64) r
 	return diffusionWithManifestations(id, updatedTime, manifestationID)
 }
 
+// --- Resolve: fast path (no upstream calls, ever) ---
+
 func TestResolve_PrefersPrincipalFromIncluded(t *testing.T) {
 	store := newFakeStore()
 	fetcher := &fakeFetcher{} // should not be called at all
-	r := NewResolver(store, fetcher, nil)
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2", "m3")
 	included := map[string]radiofrance.ManifestationDetails{
@@ -160,8 +184,8 @@ func TestResolve_PrefersPrincipalFromIncluded(t *testing.T) {
 	if duration != 91*time.Second {
 		t.Errorf("duration = %v, want 91s", duration)
 	}
-	if fetcher.calls != 0 {
-		t.Errorf("fetcher.calls = %d, want 0 (principal was already in included data)", fetcher.calls)
+	if fetcher.calls != 0 || fetcher.diffusionManifestationsCalls != 0 {
+		t.Errorf("fetcher calls = %d/%d, want 0/0 (principal was already in included data)", fetcher.calls, fetcher.diffusionManifestationsCalls)
 	}
 	if store.upserts != 1 {
 		t.Errorf("store.upserts = %d, want 1", store.upserts)
@@ -178,7 +202,7 @@ func TestResolve_FallsBackToCachedPrincipalWhenNotInIncluded(t *testing.T) {
 		URL: "https://cdn.example.com/m2-cached.mp3", Duration: 91 * time.Second, FetchedAt: time.Now(),
 	}
 	fetcher := &fakeFetcher{}
-	r := NewResolver(store, fetcher, nil)
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2", "m3")
 	// included has data, but none of it is principal (and m2 - the actual
@@ -204,67 +228,11 @@ func TestResolve_FallsBackToCachedPrincipalWhenNotInIncluded(t *testing.T) {
 	}
 }
 
-func TestResolve_FallsBackToLiveFetchStoppingAtFirstPrincipal(t *testing.T) {
+func TestResolve_CacheMissEnqueuesManifestationJobAndReturnsDegradedFallback(t *testing.T) {
 	store := newFakeStore()
-	fetcher := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
-		"m1": {URL: "https://cdn.example.com/m1.mp3", Duration: 10 * time.Second, Principal: false},
-		"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: true},
-		"m3": {URL: "https://cdn.example.com/m3.mp3", Duration: 30 * time.Second, Principal: false},
-	}}
-	r := NewResolver(store, fetcher, nil)
-
-	// Nothing in included and nothing cached - must fetch live.
-	d := diffusionWithManifestations("d1", 100, "m1", "m2", "m3")
-	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
-
-	if manifestationID != "m2" {
-		t.Errorf("manifestationID = %q, want m2 (the principal one)", manifestationID)
-	}
-	if url != "https://cdn.example.com/m2.mp3" {
-		t.Errorf("url = %q, want m2's URL", url)
-	}
-	if duration != 20*time.Second {
-		t.Errorf("duration = %v, want 20s", duration)
-	}
-	if fetcher.calls != 2 {
-		t.Errorf("fetcher.calls = %d, want 2 (stops as soon as principal m2 is found, never tries m3)", fetcher.calls)
-	}
-	// Both m1 (non-principal, tried first) and m2 (principal, found) should
-	// have been cached along the way.
-	if store.upserts != 2 {
-		t.Errorf("store.upserts = %d, want 2", store.upserts)
-	}
-}
-
-func TestResolve_DegradesToFirstSuccessfulFetchWhenNoPrincipalFound(t *testing.T) {
-	store := newFakeStore()
-	fetcher := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
-		"m1": {URL: "https://cdn.example.com/m1.mp3", Duration: 10 * time.Second, Principal: false},
-		"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: false},
-	}}
-	r := NewResolver(store, fetcher, nil)
-
-	d := diffusionWithManifestations("d1", 100, "m1", "m2")
-	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
-
-	if manifestationID != "m1" {
-		t.Errorf("manifestationID = %q, want m1 (first successful fetch, none were principal)", manifestationID)
-	}
-	if url != "https://cdn.example.com/m1.mp3" {
-		t.Errorf("url = %q, want m1's URL", url)
-	}
-	if duration != 10*time.Second {
-		t.Errorf("duration = %v, want 10s", duration)
-	}
-	if fetcher.calls != 2 {
-		t.Errorf("fetcher.calls = %d, want 2 (tried every candidate looking for principal)", fetcher.calls)
-	}
-}
-
-func TestResolve_DegradesToDefaultManifestationWhenEveryFetchFails(t *testing.T) {
-	store := newFakeStore()
-	fetcher := &fakeFetcher{err: errors.New("upstream boom")}
-	r := NewResolver(store, fetcher, nil)
+	fetcher := &fakeFetcher{} // should not be called - the whole point of the fast path
+	enricher := newTestEnricher()
+	r := NewResolver(store, fetcher, nil, enricher, testMaxAge)
 
 	d := diffusionWithManifestations("d1", 100, "m1", "m2")
 	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
@@ -272,43 +240,19 @@ func TestResolve_DegradesToDefaultManifestationWhenEveryFetchFails(t *testing.T)
 	if manifestationID != "m1" {
 		t.Errorf("manifestationID = %q, want m1 (d.ManifestationID() fallback)", manifestationID)
 	}
-	if url != "" {
-		t.Errorf("url = %q, want \"\" (nothing resolved, caller falls back to /audio/)", url)
+	if url != "" || duration != 0 {
+		t.Errorf("got url=%q duration=%v, want both zero - resolution happens in the background", url, duration)
 	}
-	if duration != 0 {
-		t.Errorf("duration = %v, want 0 (unknown)", duration)
+	if fetcher.calls != 0 || fetcher.diffusionManifestationsCalls != 0 {
+		t.Errorf("fetcher calls = %d/%d, want 0/0 (nothing fetched synchronously)", fetcher.calls, fetcher.diffusionManifestationsCalls)
 	}
-	if store.upserts != 0 {
-		t.Errorf("store.upserts = %d, want 0 (nothing to cache, everything failed)", store.upserts)
-	}
-}
-
-func TestResolve_SkipsFailingCandidateAndTriesNext(t *testing.T) {
-	store := newFakeStore()
-	fetcher := &fakeFetcher{
-		errByID: map[string]error{"m1": errors.New("gone")},
-		details: map[string]radiofrance.ManifestationDetails{
-			"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: true},
-		},
-	}
-	r := NewResolver(store, fetcher, nil)
-
-	d := diffusionWithManifestations("d1", 100, "m1", "m2")
-	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
-
-	if manifestationID != "m2" {
-		t.Errorf("manifestationID = %q, want m2 (m1 failed, m2 succeeded and is principal)", manifestationID)
-	}
-	if url != "https://cdn.example.com/m2.mp3" {
-		t.Errorf("url = %q, want m2's URL", url)
-	}
-	if duration != 20*time.Second {
-		t.Errorf("duration = %v, want 20s", duration)
+	if !enricher.isPending(manifestationKey("d1")) {
+		t.Error("expected a manifestation job to be enqueued for d1")
 	}
 }
 
 func TestResolve_NoManifestationReturnsEmpty(t *testing.T) {
-	r := NewResolver(newFakeStore(), &fakeFetcher{}, nil)
+	r := NewResolver(newFakeStore(), &fakeFetcher{}, nil, newTestEnricher(), testMaxAge)
 
 	d := radiofrance.Diffusion{ID: "d1"} // no Relationships.Manifestations
 	manifestationID, url, duration := r.Resolve(context.Background(), "show1", "Show One", d, nil)
@@ -318,6 +262,155 @@ func TestResolve_NoManifestationReturnsEmpty(t *testing.T) {
 	}
 }
 
+// --- enrichManifestation: background enrichment path ---
+
+func TestEnrichManifestation_ResolvesInlineViaSingleBulkCall(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{diffusionManifestations: map[string]map[string]radiofrance.ManifestationDetails{
+		"d1": {
+			"m1": {URL: "https://cdn.example.com/m1.mp3", Duration: 10 * time.Second, Principal: false},
+			"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: true},
+		},
+	}}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	d := diffusionWithManifestations("d1", 100, "m1", "m2")
+	ok := r.enrichManifestation(context.Background(), "show1", "Show One", d, nil)
+
+	if !ok {
+		t.Fatal("expected enrichManifestation to report a principal was found")
+	}
+	if fetcher.diffusionManifestationsCalls != 1 {
+		t.Errorf("diffusionManifestationsCalls = %d, want 1", fetcher.diffusionManifestationsCalls)
+	}
+	if fetcher.calls != 0 {
+		t.Errorf("fetcher.calls (per-ID) = %d, want 0 (bulk call already found a principal)", fetcher.calls)
+	}
+	if !store.entries["m2"].Principal {
+		t.Error("expected m2 to be cached as principal")
+	}
+}
+
+func TestEnrichManifestation_PartialBulkCoverageFallsBackPerID(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{
+		diffusionManifestations: map[string]map[string]radiofrance.ManifestationDetails{
+			"d1": {"m1": {URL: "https://cdn.example.com/m1.mp3", Principal: false}},
+		},
+		details: map[string]radiofrance.ManifestationDetails{
+			"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: true},
+		},
+	}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	d := diffusionWithManifestations("d1", 100, "m1", "m2", "m3")
+	ok := r.enrichManifestation(context.Background(), "show1", "Show One", d, nil)
+
+	if !ok {
+		t.Fatal("expected enrichManifestation to report a principal was found")
+	}
+	if fetcher.diffusionManifestationsCalls != 1 {
+		t.Errorf("diffusionManifestationsCalls = %d, want 1", fetcher.diffusionManifestationsCalls)
+	}
+	if fetcher.calls != 1 || len(fetcher.callIDs) != 1 || fetcher.callIDs[0] != "m2" {
+		t.Errorf("per-ID calls = %v, want exactly [m2] (m1 already covered by the bulk call, m3 never reached since m2 was principal)", fetcher.callIDs)
+	}
+}
+
+func TestEnrichManifestation_CachesEveryResolvedCandidateEvenWithoutPrincipal(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
+		"m1": {URL: "https://cdn.example.com/m1.mp3", Duration: 10 * time.Second, Principal: false},
+		"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: false},
+	}}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	d := diffusionWithManifestations("d1", 100, "m1", "m2")
+	ok := r.enrichManifestation(context.Background(), "show1", "Show One", d, nil)
+
+	if ok {
+		t.Error("expected enrichManifestation to report no principal was found")
+	}
+	if fetcher.calls != 2 {
+		t.Errorf("fetcher.calls = %d, want 2 (tried every candidate looking for principal)", fetcher.calls)
+	}
+	if store.upserts != 2 {
+		t.Errorf("store.upserts = %d, want 2 (both non-principal candidates still cached)", store.upserts)
+	}
+}
+
+func TestEnrichManifestation_AllFetchesFailCachesNothing(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{err: errors.New("upstream boom")}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	d := diffusionWithManifestations("d1", 100, "m1", "m2")
+	ok := r.enrichManifestation(context.Background(), "show1", "Show One", d, nil)
+
+	if ok {
+		t.Error("expected enrichManifestation to report failure")
+	}
+	if store.upserts != 0 {
+		t.Errorf("store.upserts = %d, want 0 (nothing to cache, everything failed)", store.upserts)
+	}
+}
+
+func TestEnrichManifestation_SkipsFailingCandidateAndTriesNext(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{
+		errByID: map[string]error{"m1": errors.New("gone")},
+		details: map[string]radiofrance.ManifestationDetails{
+			"m2": {URL: "https://cdn.example.com/m2.mp3", Duration: 20 * time.Second, Principal: true},
+		},
+	}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	d := diffusionWithManifestations("d1", 100, "m1", "m2")
+	ok := r.enrichManifestation(context.Background(), "show1", "Show One", d, nil)
+
+	if !ok {
+		t.Fatal("expected enrichManifestation to report a principal was found (m1 failed, m2 succeeded)")
+	}
+	if !store.entries["m2"].Principal {
+		t.Error("expected m2 to be cached as principal")
+	}
+}
+
+func TestEnrichManifestation_RechecksCacheBeforeFetching(t *testing.T) {
+	store := newFakeStore()
+	store.entries["m2"] = Entry{
+		ManifestationID: "m2", Principal: true, DiffusionUpdatedTime: 100,
+		URL: "https://cdn.example.com/m2-cached.mp3", Duration: 91 * time.Second, FetchedAt: time.Now(),
+	}
+	fetcher := &fakeFetcher{} // should not be called at all
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	d := diffusionWithManifestations("d1", 100, "m1", "m2")
+	ok := r.enrichManifestation(context.Background(), "show1", "Show One", d, nil)
+
+	if !ok {
+		t.Fatal("expected enrichManifestation to report success (already resolved by a concurrent request)")
+	}
+	if fetcher.calls != 0 || fetcher.diffusionManifestationsCalls != 0 {
+		t.Error("expected no upstream calls when the cache already had a fresh principal")
+	}
+}
+
+func TestEnrichManifestation_NoManifestationsIsNoop(t *testing.T) {
+	fetcher := &fakeFetcher{}
+	r := NewResolver(newFakeStore(), fetcher, nil, newTestEnricher(), testMaxAge)
+
+	ok := r.enrichManifestation(context.Background(), "show1", "Show One", radiofrance.Diffusion{ID: "d1"}, nil)
+	if ok {
+		t.Error("expected false when there are no manifestation candidates")
+	}
+	if fetcher.calls != 0 || fetcher.diffusionManifestationsCalls != 0 {
+		t.Error("expected no upstream calls")
+	}
+}
+
+// --- ResolveAudioURL: untouched by this redesign, still fetches live on a miss ---
+
 func TestResolveAudioURL_CacheHit(t *testing.T) {
 	store := newFakeStore()
 	store.entries["m1"] = Entry{
@@ -325,7 +418,7 @@ func TestResolveAudioURL_CacheHit(t *testing.T) {
 		ShowID: "show1", ShowTitle: "Show One", FetchedAt: time.Now(),
 	}
 	fetcher := &fakeFetcher{}
-	r := NewResolver(store, fetcher, nil)
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
 	url, showID, showTitle, err := r.ResolveAudioURL(context.Background(), "m1")
 	if err != nil {
@@ -344,7 +437,7 @@ func TestResolveAudioURL_CacheMissPreservesNoPriorShowInfo(t *testing.T) {
 	fetcher := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
 		"m1": {URL: "https://cdn.example.com/a.mp3"},
 	}}
-	r := NewResolver(store, fetcher, nil)
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
 	url, showID, showTitle, err := r.ResolveAudioURL(context.Background(), "m1")
 	if err != nil {
@@ -368,7 +461,7 @@ func TestResolveAudioURL_ExpiredEntryRefetchesAndKeepsShowInfo(t *testing.T) {
 	fetcher := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
 		"m1": {URL: "https://cdn.example.com/fresh.mp3"},
 	}}
-	r := NewResolver(store, fetcher, nil)
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
 	url, showID, showTitle, err := r.ResolveAudioURL(context.Background(), "m1")
 	if err != nil {
@@ -388,7 +481,7 @@ func TestResolveAudioURL_ExpiredEntryRefetchesAndKeepsShowInfo(t *testing.T) {
 func TestResolveAudioURL_UpstreamErrorPropagates(t *testing.T) {
 	store := newFakeStore()
 	fetcher := &fakeFetcher{err: errors.New("upstream boom")}
-	r := NewResolver(store, fetcher, nil)
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
 	_, _, _, err := r.ResolveAudioURL(context.Background(), "m1")
 	if err == nil {
@@ -405,7 +498,7 @@ func TestResolveAudioURL_ObservesCacheHitAndMiss(t *testing.T) {
 		"uncached": {URL: "https://cdn.example.com/uncached.mp3"},
 	}}
 	observer := &fakeCacheObserver{}
-	r := NewResolver(store, fetcher, observer)
+	r := NewResolver(store, fetcher, observer, newTestEnricher(), testMaxAge)
 
 	if _, _, _, err := r.ResolveAudioURL(context.Background(), "cached"); err != nil {
 		t.Fatalf("ResolveAudioURL(cached): %v", err)
@@ -428,9 +521,11 @@ func diffusionWithOrigin(id, originID string, visuals ...radiofrance.Visual) rad
 	return d
 }
 
+// --- ResolveImage: fast path ---
+
 func TestResolveImage_UsesMainImageDirectlyWhenPresent(t *testing.T) {
 	fetcher := &fakeFetcher{} // should not be called at all
-	r := NewResolver(newFakeStore(), fetcher, nil)
+	r := NewResolver(newFakeStore(), fetcher, nil, newTestEnricher(), testMaxAge)
 
 	d := radiofrance.Diffusion{ID: "d1", MainImage: "uuid-episode"}
 	got := r.ResolveImage(context.Background(), d)
@@ -446,7 +541,7 @@ func TestResolveImage_UsesMainImageDirectlyWhenPresent(t *testing.T) {
 
 func TestResolveImage_NoOriginFallsBackToVisuals(t *testing.T) {
 	fetcher := &fakeFetcher{}
-	r := NewResolver(newFakeStore(), fetcher, nil)
+	r := NewResolver(newFakeStore(), fetcher, nil, newTestEnricher(), testMaxAge)
 
 	d := diffusionWithOrigin("d1", "", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-banner"})
 	got := r.ResolveImage(context.Background(), d)
@@ -460,33 +555,11 @@ func TestResolveImage_NoOriginFallsBackToVisuals(t *testing.T) {
 	}
 }
 
-func TestResolveImage_RerunFetchesOriginMainImageOnCacheMiss(t *testing.T) {
-	store := newFakeStore()
-	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
-		"origin1": {ID: "origin1", MainImage: "uuid-episode"},
-	}}
-	r := NewResolver(store, fetcher, nil)
-
-	d := diffusionWithOrigin("d1", "origin1", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-show-banner"})
-	got := r.ResolveImage(context.Background(), d)
-
-	want := radiofrance.ImageURL(nil, "uuid-episode")
-	if got != want {
-		t.Errorf("ResolveImage = %q, want %q (origin diffusion's MainImage)", got, want)
-	}
-	if fetcher.diffusionCalls != 1 {
-		t.Errorf("fetcher.diffusionCalls = %d, want 1", fetcher.diffusionCalls)
-	}
-	if store.originImages["origin1"] != "uuid-episode" {
-		t.Errorf("store.originImages[origin1] = %q, want it cached", store.originImages["origin1"])
-	}
-}
-
 func TestResolveImage_RerunUsesCachedOriginImageWithoutFetching(t *testing.T) {
 	store := newFakeStore()
 	store.originImages["origin1"] = "uuid-episode-cached"
 	fetcher := &fakeFetcher{} // should not be called
-	r := NewResolver(store, fetcher, nil)
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
 	d := diffusionWithOrigin("d1", "origin1")
 	got := r.ResolveImage(context.Background(), d)
@@ -500,45 +573,32 @@ func TestResolveImage_RerunUsesCachedOriginImageWithoutFetching(t *testing.T) {
 	}
 }
 
-func TestResolveImage_RerunFallsBackToVisualsWhenOriginHasNoMainImage(t *testing.T) {
+func TestResolveImage_RerunCacheMissEnqueuesOriginJobAndFallsBackToVisuals(t *testing.T) {
 	store := newFakeStore()
-	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
-		"origin1": {ID: "origin1"}, // no MainImage either
-	}}
-	r := NewResolver(store, fetcher, nil)
+	fetcher := &fakeFetcher{} // should not be called - the whole point of the fast path
+	enricher := newTestEnricher()
+	r := NewResolver(store, fetcher, nil, enricher, testMaxAge)
 
 	d := diffusionWithOrigin("d1", "origin1", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-show-banner"})
 	got := r.ResolveImage(context.Background(), d)
 
 	want := radiofrance.DiffusionImageURL(d)
 	if got != want {
-		t.Errorf("ResolveImage = %q, want %q (visuals fallback)", got, want)
+		t.Errorf("ResolveImage = %q, want %q (visuals fallback while enrichment is pending)", got, want)
 	}
-	if mainImage, ok := store.originImages["origin1"]; !ok || mainImage != "" {
-		t.Errorf("expected the empty result to be cached, got %q, ok=%v", mainImage, ok)
+	if fetcher.diffusionCalls != 0 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (nothing fetched synchronously)", fetcher.diffusionCalls)
 	}
-}
-
-func TestResolveImage_RerunFallsBackToVisualsWhenOriginFetchFails(t *testing.T) {
-	store := newFakeStore()
-	fetcher := &fakeFetcher{diffusionErr: errors.New("upstream boom")}
-	r := NewResolver(store, fetcher, nil)
-
-	d := diffusionWithOrigin("d1", "origin1", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-show-banner"})
-	got := r.ResolveImage(context.Background(), d)
-
-	want := radiofrance.DiffusionImageURL(d)
-	if got != want {
-		t.Errorf("ResolveImage = %q, want %q (visuals fallback)", got, want)
-	}
-	if _, ok := store.originImages["origin1"]; ok {
-		t.Error("did not expect a cache entry when the fetch failed")
+	if !enricher.isPending(originKey("origin1")) {
+		t.Error("expected an origin job to be enqueued for origin1")
 	}
 }
+
+// --- ResolveDescription: fast path ---
 
 func TestResolveDescription_NoOriginUsesOwnFields(t *testing.T) {
 	fetcher := &fakeFetcher{} // should not be called at all
-	r := NewResolver(newFakeStore(), fetcher, nil)
+	r := NewResolver(newFakeStore(), fetcher, nil, newTestEnricher(), testMaxAge)
 
 	d := radiofrance.Diffusion{ID: "d1", BodyMarkdown: "own body", Standfirst: "own standfirst"}
 	body, sf, originCreatedTime := r.ResolveDescription(context.Background(), d)
@@ -554,34 +614,6 @@ func TestResolveDescription_NoOriginUsesOwnFields(t *testing.T) {
 	}
 }
 
-func TestResolveDescription_RerunFetchesOriginBodyOnCacheMiss(t *testing.T) {
-	store := newFakeStore()
-	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
-		"origin1": {ID: "origin1", BodyMarkdown: "**rich** origin body", Standfirst: "origin standfirst", CreatedTime: 1704067200},
-	}}
-	r := NewResolver(store, fetcher, nil)
-
-	d := radiofrance.Diffusion{ID: "d1", BodyMarkdown: "flattened rerun body", Standfirst: "rerun standfirst"}
-	d.Relationships.OriginDiffusion = []string{"origin1"}
-	body, sf, originCreatedTime := r.ResolveDescription(context.Background(), d)
-
-	if body != "**rich** origin body" || sf != "origin standfirst" {
-		t.Errorf("ResolveDescription = (%q, %q), want origin diffusion's fields", body, sf)
-	}
-	if originCreatedTime != 1704067200 {
-		t.Errorf("originCreatedTime = %d, want the origin's CreatedTime", originCreatedTime)
-	}
-	if fetcher.diffusionCalls != 1 {
-		t.Errorf("fetcher.diffusionCalls = %d, want 1", fetcher.diffusionCalls)
-	}
-	if store.originBodies["origin1"] != "**rich** origin body" {
-		t.Errorf("store.originBodies[origin1] = %q, want it cached", store.originBodies["origin1"])
-	}
-	if store.originCreatedTimes["origin1"] != 1704067200 {
-		t.Errorf("store.originCreatedTimes[origin1] = %d, want it cached", store.originCreatedTimes["origin1"])
-	}
-}
-
 func TestResolveDescription_RerunUsesCachedOriginBodyWithoutFetching(t *testing.T) {
 	store := newFakeStore()
 	store.originBodies["origin1"] = "cached origin body"
@@ -589,7 +621,7 @@ func TestResolveDescription_RerunUsesCachedOriginBodyWithoutFetching(t *testing.
 	store.originCreatedTimes["origin1"] = 1704067200
 	store.originBodySet["origin1"] = true
 	fetcher := &fakeFetcher{} // should not be called
-	r := NewResolver(store, fetcher, nil)
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
 	d := radiofrance.Diffusion{ID: "d1"}
 	d.Relationships.OriginDiffusion = []string{"origin1"}
@@ -606,14 +638,17 @@ func TestResolveDescription_RerunUsesCachedOriginBodyWithoutFetching(t *testing.
 	}
 }
 
-func TestResolveDescription_RerunFallsBackToOwnBodyButKeepsOriginCreatedTimeWhenOriginBodyBlank(t *testing.T) {
+func TestResolveDescription_RerunUsesCachedButBlankOriginBodyFallsBackToOwnFields(t *testing.T) {
 	store := newFakeStore()
-	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
-		// placeholder body/standfirst, but a real CreatedTime - the origin
-		// diffusion itself was resolved fine, it just has no real notes.
-		"origin1": {ID: "origin1", BodyMarkdown: ".", Standfirst: ".", CreatedTime: 1704067200},
-	}}
-	r := NewResolver(store, fetcher, nil)
+	// The origin diffusion was already resolved by a prior background
+	// job - it just turned out to have no real notes of its own (a
+	// placeholder), though its CreatedTime is real.
+	store.originBodies["origin1"] = "."
+	store.originStandfirsts["origin1"] = "."
+	store.originCreatedTimes["origin1"] = 1704067200
+	store.originBodySet["origin1"] = true
+	fetcher := &fakeFetcher{} // should not be called
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
 
 	d := radiofrance.Diffusion{ID: "d1", BodyMarkdown: "own body", Standfirst: "own standfirst"}
 	d.Relationships.OriginDiffusion = []string{"origin1"}
@@ -627,22 +662,162 @@ func TestResolveDescription_RerunFallsBackToOwnBodyButKeepsOriginCreatedTimeWhen
 	}
 }
 
-func TestResolveDescription_RerunFallsBackToOwnFieldsWhenOriginFetchFails(t *testing.T) {
+func TestResolveDescription_RerunCacheMissEnqueuesOriginJobAndFallsBackToOwnFields(t *testing.T) {
 	store := newFakeStore()
-	fetcher := &fakeFetcher{diffusionErr: errors.New("upstream boom")}
-	r := NewResolver(store, fetcher, nil)
+	fetcher := &fakeFetcher{} // should not be called - the whole point of the fast path
+	enricher := newTestEnricher()
+	r := NewResolver(store, fetcher, nil, enricher, testMaxAge)
 
 	d := radiofrance.Diffusion{ID: "d1", BodyMarkdown: "own body", Standfirst: "own standfirst"}
 	d.Relationships.OriginDiffusion = []string{"origin1"}
 	body, sf, originCreatedTime := r.ResolveDescription(context.Background(), d)
 
 	if body != "own body" || sf != "own standfirst" {
-		t.Errorf("ResolveDescription = (%q, %q), want own fields (fetch failed)", body, sf)
+		t.Errorf("ResolveDescription = (%q, %q), want own fields while enrichment is pending", body, sf)
 	}
 	if originCreatedTime != 0 {
-		t.Errorf("originCreatedTime = %d, want 0 (origin unreachable)", originCreatedTime)
+		t.Errorf("originCreatedTime = %d, want 0 (origin not resolved yet)", originCreatedTime)
+	}
+	if fetcher.diffusionCalls != 0 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (nothing fetched synchronously)", fetcher.diffusionCalls)
+	}
+	if !enricher.isPending(originKey("origin1")) {
+		t.Error("expected an origin job to be enqueued for origin1")
+	}
+}
+
+func TestResolveImageAndDescription_ShareTheSameOriginJob(t *testing.T) {
+	store := newFakeStore()
+	enricher := newTestEnricher()
+	r := NewResolver(store, &fakeFetcher{}, nil, enricher, testMaxAge)
+
+	d := diffusionWithOrigin("d1", "origin1", radiofrance.Visual{Name: "square_banner", VisualUUID: "uuid-show-banner"})
+	r.ResolveImage(context.Background(), d)
+	r.ResolveDescription(context.Background(), d)
+
+	if got := len(enricher.jobs); got != 1 {
+		t.Errorf("queued job count = %d, want 1 (both should enqueue the same deduped origin job)", got)
+	}
+}
+
+// --- enrichOrigin: background enrichment path ---
+
+func TestEnrichOrigin_CachesMainImageAndBodyViaSingleCall(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
+		"origin1": {ID: "origin1", MainImage: "uuid-episode", BodyMarkdown: "**rich** origin body", Standfirst: "origin standfirst", CreatedTime: 1704067200},
+	}}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	ok := r.enrichOrigin(context.Background(), "origin1")
+
+	if !ok {
+		t.Fatal("expected enrichOrigin to report success")
+	}
+	if fetcher.diffusionCalls != 1 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 1 (single call resolves both image and body)", fetcher.diffusionCalls)
+	}
+	if store.originImages["origin1"] != "uuid-episode" {
+		t.Errorf("store.originImages[origin1] = %q, want it cached", store.originImages["origin1"])
+	}
+	if store.originBodies["origin1"] != "**rich** origin body" {
+		t.Errorf("store.originBodies[origin1] = %q, want it cached", store.originBodies["origin1"])
+	}
+	if store.originCreatedTimes["origin1"] != 1704067200 {
+		t.Errorf("store.originCreatedTimes[origin1] = %d, want it cached", store.originCreatedTimes["origin1"])
+	}
+}
+
+func TestEnrichOrigin_NoOpWhenBothAlreadyCached(t *testing.T) {
+	store := newFakeStore()
+	store.originImages["origin1"] = "uuid-episode"
+	store.originBodySet["origin1"] = true
+	fetcher := &fakeFetcher{} // should not be called
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	ok := r.enrichOrigin(context.Background(), "origin1")
+
+	if !ok {
+		t.Error("expected enrichOrigin to report success (already cached)")
+	}
+	if fetcher.diffusionCalls != 0 {
+		t.Errorf("fetcher.diffusionCalls = %d, want 0 (both already cached)", fetcher.diffusionCalls)
+	}
+}
+
+func TestEnrichOrigin_CachesEmptyImageWhenOriginHasNone(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{diffusions: map[string]radiofrance.Diffusion{
+		"origin1": {ID: "origin1"}, // no MainImage
+	}}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	ok := r.enrichOrigin(context.Background(), "origin1")
+
+	if !ok {
+		t.Error("expected enrichOrigin to report success")
+	}
+	if mainImage, ok := store.originImages["origin1"]; !ok || mainImage != "" {
+		t.Errorf("expected the empty result to be cached, got %q, ok=%v", mainImage, ok)
+	}
+}
+
+func TestEnrichOrigin_FetchFailureLeavesCacheEmpty(t *testing.T) {
+	store := newFakeStore()
+	fetcher := &fakeFetcher{diffusionErr: errors.New("upstream boom")}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	ok := r.enrichOrigin(context.Background(), "origin1")
+
+	if ok {
+		t.Error("expected enrichOrigin to report failure")
+	}
+	if _, ok := store.originImages["origin1"]; ok {
+		t.Error("did not expect a cache entry when the fetch failed")
 	}
 	if _, ok := store.originBodySet["origin1"]; ok {
 		t.Error("did not expect a cache entry when the fetch failed")
+	}
+}
+
+// --- AllResolved ---
+
+func TestAllResolved_NothingPendingReturnsTrue(t *testing.T) {
+	r := NewResolver(newFakeStore(), &fakeFetcher{}, nil, newTestEnricher(), testMaxAge)
+
+	d := diffusionWithManifestation("d1", "m1", 100)
+	if !r.AllResolved([]radiofrance.Diffusion{d}) {
+		t.Error("expected AllResolved to be true when nothing is pending")
+	}
+}
+
+func TestAllResolved_PendingManifestationReturnsFalse(t *testing.T) {
+	store := newFakeStore()
+	enricher := newTestEnricher()
+	r := NewResolver(store, &fakeFetcher{}, nil, enricher, testMaxAge)
+
+	d := diffusionWithManifestations("d1", 100, "m1")
+	r.Resolve(context.Background(), "show1", "Show One", d, nil) // enqueues a manifestation job
+
+	if r.AllResolved([]radiofrance.Diffusion{d}) {
+		t.Error("expected AllResolved to be false while the manifestation job is still pending")
+	}
+}
+
+func TestAllResolved_PendingOriginOfRerunReturnsFalse(t *testing.T) {
+	store := newFakeStore()
+	enricher := newTestEnricher()
+	r := NewResolver(store, &fakeFetcher{}, nil, enricher, testMaxAge)
+
+	d := diffusionWithOrigin("d1", "origin1")
+	d.Relationships.Manifestations = []string{"m1"}
+	store.entries["m1"] = Entry{
+		ManifestationID: "m1", Principal: true, DiffusionUpdatedTime: 0,
+		URL: "https://cdn.example.com/m1.mp3", FetchedAt: time.Now(),
+	}
+	r.ResolveImage(context.Background(), d) // enqueues an origin job
+
+	if r.AllResolved([]radiofrance.Diffusion{d}) {
+		t.Error("expected AllResolved to be false while the origin job is still pending")
 	}
 }

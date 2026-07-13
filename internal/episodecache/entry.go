@@ -24,13 +24,11 @@ type Entry struct {
 	FetchedAt time.Time
 }
 
-// maxAge bounds how long an entry is trusted when ExpiresAt is unset -
-// Radio France doesn't always report an expiration, so this is the
-// fallback safety net against serving an indefinitely stale URL.
-const maxAge = 30 * 24 * time.Hour
-
-// fresh reports whether e can be used without re-fetching.
-func (e Entry) fresh() bool {
+// fresh reports whether e can be used without re-fetching. maxAge bounds
+// how long e is trusted when ExpiresAt is unset - Radio France doesn't
+// always report an expiration, so this is the fallback safety net against
+// serving an indefinitely stale URL (see config.Config.ManifestationCacheMaxAge).
+func (e Entry) fresh(maxAge time.Duration) bool {
 	if e.ExpiresAt != nil {
 		return e.ExpiresAt.After(time.Now())
 	}
