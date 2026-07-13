@@ -18,6 +18,10 @@ import (
 // docker-compose verification instead.
 type store interface {
 	Get(ctx context.Context, manifestationID string) (Entry, bool, error)
+	// GetMany returns whichever of manifestationIDs have a cached entry, in
+	// one round trip - used by findCachedPrincipal instead of issuing one
+	// query per sibling manifestation.
+	GetMany(ctx context.Context, manifestationIDs []string) (map[string]Entry, error)
 	Upsert(ctx context.Context, e Entry) error
 	GetOriginImage(ctx context.Context, diffusionID string) (mainImage string, ok bool, err error)
 	UpsertOriginImage(ctx context.Context, diffusionID, mainImage string) error
@@ -215,11 +219,21 @@ func findPrincipal(candidates []string, included map[string]radiofrance.Manifest
 }
 
 // findCachedPrincipal returns the first of candidates that's cached,
-// flagged Principal, and still fresh for diffusionUpdatedTime.
+// flagged Principal, and still fresh for diffusionUpdatedTime. Fetches all
+// of candidates in a single store round trip (see store.GetMany) rather
+// than one query per candidate - candidates is typically every sibling
+// manifestation of one diffusion (~8), and this runs for every diffusion
+// on a page, so batching here avoids len(candidates)*N sequential DB round
+// trips per feed build.
 func (r *Resolver) findCachedPrincipal(ctx context.Context, candidates []string, diffusionUpdatedTime int64) (string, Entry, bool) {
+	cached, err := r.store.GetMany(ctx, candidates)
+	if err != nil {
+		slog.Warn("episodecache: failed to batch-fetch cached manifestations", "error", err)
+		cached = nil
+	}
 	for _, id := range candidates {
-		e, ok, err := r.store.Get(ctx, id)
-		hit := err == nil && ok && e.Principal && e.DiffusionUpdatedTime == diffusionUpdatedTime && e.fresh(r.maxAge)
+		e, ok := cached[id]
+		hit := ok && e.Principal && e.DiffusionUpdatedTime == diffusionUpdatedTime && e.fresh(r.maxAge)
 		r.observeCacheLookup(ctx, hit)
 		if hit {
 			return id, e, true

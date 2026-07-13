@@ -42,6 +42,42 @@ func (s *Store) Get(ctx context.Context, manifestationID string) (Entry, bool, e
 	return e, true, nil
 }
 
+// GetMany returns the cached entries for whichever of manifestationIDs
+// have a row, in one round trip - see Resolver.findCachedPrincipal.
+// manifestationIDs with no cached row simply have no entry in the result
+// map (not an error).
+func (s *Store) GetMany(ctx context.Context, manifestationIDs []string) (map[string]Entry, error) {
+	if len(manifestationIDs) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT manifestation_id, diffusion_id, coalesce(show_id, ''), coalesce(show_title, ''),
+		       url, coalesce(duration_seconds, 0), principal, diffusion_updated_time, expires_at, fetched_at
+		FROM manifestation_cache
+		WHERE manifestation_id = ANY($1)`, manifestationIDs)
+	if err != nil {
+		return nil, fmt.Errorf("querying manifestation_cache: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make(map[string]Entry, len(manifestationIDs))
+	for rows.Next() {
+		var e Entry
+		var durationSeconds int
+		if err := rows.Scan(&e.ManifestationID, &e.DiffusionID, &e.ShowID, &e.ShowTitle,
+			&e.URL, &durationSeconds, &e.Principal, &e.DiffusionUpdatedTime, &e.ExpiresAt, &e.FetchedAt); err != nil {
+			return nil, fmt.Errorf("scanning manifestation_cache row: %w", err)
+		}
+		e.Duration = secondsToDuration(durationSeconds)
+		entries[e.ManifestationID] = e
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("querying manifestation_cache: %w", err)
+	}
+	return entries, nil
+}
+
 // Upsert inserts or replaces the cached entry for e.ManifestationID.
 func (s *Store) Upsert(ctx context.Context, e Entry) error {
 	_, err := s.pool.Exec(ctx, `

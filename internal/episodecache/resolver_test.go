@@ -25,6 +25,7 @@ func newTestEnricher() *Enricher {
 type fakeStore struct {
 	entries       map[string]Entry
 	gets          int
+	getManyCalls  int
 	upserts       int
 	originImages  map[string]string
 	originGets    int
@@ -53,6 +54,17 @@ func (s *fakeStore) Get(ctx context.Context, manifestationID string) (Entry, boo
 	s.gets++
 	e, ok := s.entries[manifestationID]
 	return e, ok, nil
+}
+
+func (s *fakeStore) GetMany(ctx context.Context, manifestationIDs []string) (map[string]Entry, error) {
+	s.getManyCalls++
+	entries := make(map[string]Entry, len(manifestationIDs))
+	for _, id := range manifestationIDs {
+		if e, ok := s.entries[id]; ok {
+			entries[id] = e
+		}
+	}
+	return entries, nil
 }
 
 func (s *fakeStore) Upsert(ctx context.Context, e Entry) error {
@@ -226,6 +238,34 @@ func TestResolve_FallsBackToCachedPrincipalWhenNotInIncluded(t *testing.T) {
 	}
 	if fetcher.calls != 0 {
 		t.Errorf("fetcher.calls = %d, want 0 (found via cache, no live fetch needed)", fetcher.calls)
+	}
+	if store.getManyCalls != 1 || store.gets != 0 {
+		t.Errorf("store.getManyCalls = %d, store.gets = %d, want 1 batched call and 0 individual Get calls", store.getManyCalls, store.gets)
+	}
+}
+
+func TestFindCachedPrincipal_BatchesCandidatesInOneStoreRoundTrip(t *testing.T) {
+	store := newFakeStore()
+	// The actual principal (m5) is last in candidate order and the only
+	// one that's cached - a sequential per-candidate lookup would issue 5
+	// Get calls to find it; batching should need exactly one GetMany call
+	// regardless of where in the list the hit is.
+	store.entries["m5"] = Entry{
+		ManifestationID: "m5", Principal: true, DiffusionUpdatedTime: 100,
+		URL: "https://cdn.example.com/m5.mp3", FetchedAt: time.Now(),
+	}
+	r := NewResolver(store, &fakeFetcher{}, nil, newTestEnricher(), testMaxAge)
+
+	id, entry, ok := r.findCachedPrincipal(context.Background(), []string{"m1", "m2", "m3", "m4", "m5"}, 100)
+
+	if !ok || id != "m5" {
+		t.Fatalf("findCachedPrincipal = (%q, %v, %v), want (m5, _, true)", id, entry, ok)
+	}
+	if store.getManyCalls != 1 {
+		t.Errorf("store.getManyCalls = %d, want 1", store.getManyCalls)
+	}
+	if store.gets != 0 {
+		t.Errorf("store.gets = %d, want 0 (should not fall back to per-candidate Get)", store.gets)
 	}
 }
 
@@ -539,6 +579,12 @@ func (s *syncFakeStore) Upsert(ctx context.Context, e Entry) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.fakeStore.Upsert(ctx, e)
+}
+
+func (s *syncFakeStore) GetMany(ctx context.Context, manifestationIDs []string) (map[string]Entry, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fakeStore.GetMany(ctx, manifestationIDs)
 }
 
 // blockingFetcher wraps fakeFetcher, blocking GetManifestation until
