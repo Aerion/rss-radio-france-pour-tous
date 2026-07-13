@@ -67,22 +67,49 @@ type Server struct {
 	blockedUserAgents []string
 }
 
-// NewServer builds a Server. publicBaseURL is this app's own externally
-// visible base URL (e.g. "https://rss.example.com"), used to build
-// self-referencing links in the feed and search results. showObserver may
-// be nil to skip the per-show request metric. blockedUserAgents is a
-// lowercased list of substrings (see config.Config.BlockedUserAgents);
-// requests to feed-serving routes with a matching User-Agent get a 403.
-func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, imageResolver feed.ImageResolver, descriptionResolver feed.DescriptionResolver, audioResolver AudioResolver, feedCache *feedcache.Cache, enrichmentStatus EnrichmentStatus, showObserver ShowObserver, blockedUserAgents []string) *Server {
+// ServerConfig holds NewServer's dependencies. It exists as a named-field
+// struct rather than a positional parameter list because several of these
+// are typically backed by the very same value - a *episodecache.Resolver
+// implements ManifestationResolver, ImageResolver, DescriptionResolver,
+// AudioResolver, and EnrichmentStatus all at once (see cmd/server/main.go)
+// - which a positional constructor would make dangerously easy to pass in
+// the wrong order without the compiler ever noticing.
+type ServerConfig struct {
+	API API
+	// PublicBaseURL is this app's own externally visible base URL (e.g.
+	// "https://rss.example.com"), used to build self-referencing links in
+	// the feed and search results.
+	PublicBaseURL         string
+	ManifestationResolver feed.ManifestationResolver
+	ImageResolver         feed.ImageResolver
+	DescriptionResolver   feed.DescriptionResolver
+	AudioResolver         AudioResolver
+	FeedCache             *feedcache.Cache
+	EnrichmentStatus      EnrichmentStatus
+	// ShowObserver may be nil to skip the per-show request metric.
+	ShowObserver ShowObserver
+	// BlockedUserAgents is a lowercased list of substrings (see
+	// config.Config.BlockedUserAgents); requests to feed-serving routes
+	// with a matching User-Agent get a 403.
+	BlockedUserAgents []string
+}
+
+// NewServer builds a Server from cfg.
+func NewServer(cfg ServerConfig) *Server {
 	return &Server{
-		api:               api,
-		feedBuilder:       feed.Builder{PublicBaseURL: publicBaseURL, Resolver: manifestationResolver, ImageResolver: imageResolver, DescriptionResolver: descriptionResolver},
-		audioResolver:     audioResolver,
-		feedCache:         feedCache,
-		enrichmentStatus:  enrichmentStatus,
-		showObserver:      showObserver,
-		publicBaseURL:     publicBaseURL,
-		blockedUserAgents: blockedUserAgents,
+		api: cfg.API,
+		feedBuilder: feed.Builder{
+			PublicBaseURL:       cfg.PublicBaseURL,
+			Resolver:            cfg.ManifestationResolver,
+			ImageResolver:       cfg.ImageResolver,
+			DescriptionResolver: cfg.DescriptionResolver,
+		},
+		audioResolver:     cfg.AudioResolver,
+		feedCache:         cfg.FeedCache,
+		enrichmentStatus:  cfg.EnrichmentStatus,
+		showObserver:      cfg.ShowObserver,
+		publicBaseURL:     cfg.PublicBaseURL,
+		blockedUserAgents: cfg.BlockedUserAgents,
 	}
 }
 
