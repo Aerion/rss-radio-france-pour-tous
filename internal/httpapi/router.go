@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/feed"
+	"github.com/Aerion/rss-radio-france-pour-tous/internal/feedcache"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
 )
 
@@ -29,11 +30,24 @@ type AudioResolver interface {
 	ResolveAudioURL(ctx context.Context, manifestationID string) (url, showID, showTitle string, err error)
 }
 
+// EnrichmentStatus reports whether every diffusion on a cached feed page
+// (and, for reruns, its origin) has finished background enrichment - lets
+// a degraded cached page be invalidated as soon as it catches up, instead
+// of waiting out the feed cache's TTL. Typically backed by
+// *episodecache.Resolver. Declared here (rather than importing
+// episodecache directly) for the same reason as AudioResolver: so this
+// package depends only on the narrow interface it needs.
+type EnrichmentStatus interface {
+	AllResolved(diffusions []radiofrance.Diffusion) bool
+}
+
 // Server holds the dependencies shared by all HTTP handlers.
 type Server struct {
 	api               API
 	feedBuilder       feed.Builder
 	audioResolver     AudioResolver
+	feedCache         *feedcache.Cache
+	enrichmentStatus  EnrichmentStatus
 	publicBaseURL     string
 	blockedUserAgents []string
 }
@@ -43,11 +57,13 @@ type Server struct {
 // self-referencing links in the feed and search results. blockedUserAgents
 // is a lowercased list of substrings (see config.Config.BlockedUserAgents);
 // requests to feed-serving routes with a matching User-Agent get a 403.
-func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, imageResolver feed.ImageResolver, descriptionResolver feed.DescriptionResolver, audioResolver AudioResolver, blockedUserAgents []string) *Server {
+func NewServer(api API, publicBaseURL string, manifestationResolver feed.ManifestationResolver, imageResolver feed.ImageResolver, descriptionResolver feed.DescriptionResolver, audioResolver AudioResolver, feedCache *feedcache.Cache, enrichmentStatus EnrichmentStatus, blockedUserAgents []string) *Server {
 	return &Server{
 		api:               api,
 		feedBuilder:       feed.Builder{PublicBaseURL: publicBaseURL, Resolver: manifestationResolver, ImageResolver: imageResolver, DescriptionResolver: descriptionResolver},
 		audioResolver:     audioResolver,
+		feedCache:         feedCache,
+		enrichmentStatus:  enrichmentStatus,
 		publicBaseURL:     publicBaseURL,
 		blockedUserAgents: blockedUserAgents,
 	}

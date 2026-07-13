@@ -6,7 +6,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Aerion/rss-radio-france-pour-tous/internal/feedcache"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
 )
 
@@ -23,7 +25,12 @@ func newTestServer(t *testing.T, api API, audioResolver AudioResolver) http.Hand
 
 func newTestServerWithBlockedUserAgents(t *testing.T, api API, audioResolver AudioResolver, blocked []string) http.Handler {
 	t.Helper()
-	return NewServer(api, "https://radio-france-rss.example.com", nil, nil, nil, audioResolver, blocked).Routes(noopInstrumenter{})
+	return newServerForTest(t, api, audioResolver, feedcache.New(time.Hour, nil), &fakeEnrichmentStatus{}, blocked).Routes(noopInstrumenter{})
+}
+
+func newServerForTest(t *testing.T, api API, audioResolver AudioResolver, feedCache *feedcache.Cache, enrichmentStatus EnrichmentStatus, blocked []string) *Server {
+	t.Helper()
+	return NewServer(api, "https://radio-france-rss.example.com", nil, nil, nil, audioResolver, feedCache, enrichmentStatus, blocked)
 }
 
 func TestHandleRequest_UnknownRoute404(t *testing.T) {
@@ -207,5 +214,83 @@ func TestHandleRequest_Homepage_BlockedUserAgentStillAllowed(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200 (blocklist only applies to feed routes)", rec.Code)
+	}
+}
+
+func diffusionWithOneManifestation(id string) radiofrance.Diffusion {
+	d := radiofrance.Diffusion{ID: id, Title: "Episode " + id, CreatedTime: 1700000000}
+	d.Relationships.Manifestations = []string{"m-" + id}
+	return d
+}
+
+func TestHandleRequest_RSSFeed_DegradedCacheHitStillPendingServesStaleWithoutRecalling(t *testing.T) {
+	show := radiofrance.Show{ID: "0b91efaf", Title: "Affaires sensibles"}
+	api := &fakeAPI{showDiffusions: radiofrance.ShowDiffusions{
+		Diffusions: []radiofrance.Diffusion{diffusionWithOneManifestation("d1")}, ShowDetails: show,
+	}}
+	enrichment := &fakeEnrichmentStatus{allResolved: false}
+	server := NewServer(api, "https://radio-france-rss.example.com", nil, nil, nil, &fakeAudioResolver{},
+		feedcache.New(time.Hour, nil), enrichment, nil)
+	h := server.Routes(noopInstrumenter{})
+
+	rec1 := httptest.NewRecorder()
+	h.ServeHTTP(rec1, httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+
+	if rec1.Code != http.StatusOK || rec2.Code != http.StatusOK {
+		t.Fatalf("status codes = %d, %d, want 200, 200", rec1.Code, rec2.Code)
+	}
+	if api.showDiffusionsCalls != 1 {
+		t.Errorf("api.showDiffusionsCalls = %d, want 1 (second request should be served from the feed cache, not rebuilt)", api.showDiffusionsCalls)
+	}
+	if rec1.Body.String() != rec2.Body.String() {
+		t.Error("expected the cached response body to match the original")
+	}
+	// No manifestation resolver is configured, so every item's duration is
+	// unresolved and the entry is cached degraded - the active-invalidation
+	// check should have run exactly once, on the second (cache-hit) request.
+	if enrichment.calls != 1 {
+		t.Errorf("enrichment.calls = %d, want 1", enrichment.calls)
+	}
+}
+
+func TestHandleRequest_RSSFeed_DegradedCacheHitButNowResolvedInvalidatesAndRebuilds(t *testing.T) {
+	show := radiofrance.Show{ID: "0b91efaf", Title: "Affaires sensibles"}
+	api := &fakeAPI{showDiffusions: radiofrance.ShowDiffusions{
+		Diffusions: []radiofrance.Diffusion{diffusionWithOneManifestation("d1")}, ShowDetails: show,
+	}}
+	enrichment := &fakeEnrichmentStatus{allResolved: true}
+	server := NewServer(api, "https://radio-france-rss.example.com", nil, nil, nil, &fakeAudioResolver{},
+		feedcache.New(time.Hour, nil), enrichment, nil)
+	h := server.Routes(noopInstrumenter{})
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+
+	if api.showDiffusionsCalls != 2 {
+		t.Errorf("api.showDiffusionsCalls = %d, want 2 (a degraded entry whose enrichment has since caught up should be invalidated and rebuilt)", api.showDiffusionsCalls)
+	}
+}
+
+func TestHandleRequest_RSSFeed_NonDegradedCacheHitSkipsEnrichmentCheck(t *testing.T) {
+	show := radiofrance.Show{ID: "0b91efaf", Title: "Affaires sensibles"}
+	api := &fakeAPI{showDiffusions: radiofrance.ShowDiffusions{
+		Diffusions: []radiofrance.Diffusion{diffusionWithOneManifestation("d1")}, ShowDetails: show,
+	}}
+	enrichment := &fakeEnrichmentStatus{}
+	resolver := fakeManifestationResolver{url: "https://cdn.example.com/audio.mp3", duration: 90 * time.Second}
+	server := NewServer(api, "https://radio-france-rss.example.com", resolver, nil, nil, &fakeAudioResolver{},
+		feedcache.New(time.Hour, nil), enrichment, nil)
+	h := server.Routes(noopInstrumenter{})
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/rss/0b91efaf", nil))
+
+	if api.showDiffusionsCalls != 1 {
+		t.Errorf("api.showDiffusionsCalls = %d, want 1 (fully-resolved entry should be served from cache)", api.showDiffusionsCalls)
+	}
+	if enrichment.calls != 0 {
+		t.Errorf("enrichment.calls = %d, want 0 (active-invalidation check should be skipped for a non-degraded entry)", enrichment.calls)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/analytics"
+	"github.com/Aerion/rss-radio-france-pour-tous/internal/feedcache"
 )
 
 func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) error {
@@ -68,6 +69,23 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	key := feedcache.Key(showID, page)
+	if entry, ok := s.feedCache.Get(r.Context(), key); ok {
+		// A page cached degraded (some items still missing enrichment)
+		// stays fresh from the feed cache's point of view until its TTL
+		// elapses - but if background enrichment has since caught up,
+		// there's no reason to keep serving the stale, degraded copy
+		// until then: invalidate it now and fall through to rebuild,
+		// this time fully enriched.
+		if !entry.HadDegraded || !s.enrichmentStatus.AllResolved(entry.Diffusions) {
+			analytics.WithShow(r.Context(), entry.ShowID, entry.ShowTitle)
+			w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+			_, err := fmt.Fprint(w, entry.Body)
+			return err
+		}
+		s.feedCache.Invalidate(key)
+	}
+
 	showDiffusions, err := s.api.GetShowDiffusions(r.Context(), showID, page)
 	if err != nil {
 		return err
@@ -79,10 +97,18 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 		nextPageURL = fmt.Sprintf("%s%s?page=%d", s.publicBaseURL, r.URL.Path, *showDiffusions.NextPageIdx)
 	}
 
-	body, err := s.feedBuilder.Build(r.Context(), showDiffusions, nextPageURL)
+	body, hadDegraded, err := s.feedBuilder.Build(r.Context(), showDiffusions, nextPageURL)
 	if err != nil {
 		return err
 	}
+
+	s.feedCache.Set(key, feedcache.Entry{
+		Body:        body,
+		ShowID:      showID,
+		ShowTitle:   showDiffusions.ShowDetails.Title,
+		Diffusions:  showDiffusions.Diffusions,
+		HadDegraded: hadDegraded,
+	})
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	_, err = fmt.Fprint(w, body)

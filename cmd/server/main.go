@@ -16,6 +16,7 @@ import (
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/analytics"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/config"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/episodecache"
+	"github.com/Aerion/rss-radio-france-pour-tous/internal/feedcache"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/httpapi"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/observability"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
@@ -76,7 +77,10 @@ func run() error {
 	episodeCache := episodecache.NewResolver(episodecache.NewStore(pool), client, obs, enricher, cfg.ManifestationCacheMaxAge)
 	go enricher.Run(ctx, episodeCache, cfg.EnrichmentWorkers)
 
-	server := httpapi.NewServer(client, cfg.PublicBaseURL, episodeCache, episodeCache, episodeCache, episodeCache, cfg.BlockedUserAgents)
+	feedCache := feedcache.New(cfg.FeedCacheTTL, obs)
+	go feedCache.Sweep(ctx, cfg.FeedCacheSweepInterval)
+
+	server := httpapi.NewServer(client, cfg.PublicBaseURL, episodeCache, episodeCache, episodeCache, episodeCache, feedCache, episodeCache, cfg.BlockedUserAgents)
 
 	mux := http.NewServeMux()
 	mux.Handle("/", server.Routes(obs, analyticsWriter))

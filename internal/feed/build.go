@@ -97,18 +97,26 @@ type Builder struct {
 
 // Build renders an RSS 2.0 feed for one page of a show's diffusions.
 // nextPageURL, if non-empty, is advertised as an atom:link rel="next" for
-// feed readers that support paginated feeds (RFC 5005).
-func (b Builder) Build(ctx context.Context, sd radiofrance.ShowDiffusions, nextPageURL string) (string, error) {
+// feed readers that support paginated feeds (RFC 5005). hadDegraded
+// reports whether any item in the feed is still missing enrichment
+// (unresolved duration, or - for a rerun - an unresolved origin) at build
+// time - callers use it to decide whether a rendered feed is safe to cache
+// past its next background-enrichment update (see internal/feedcache).
+func (b Builder) Build(ctx context.Context, sd radiofrance.ShowDiffusions, nextPageURL string) (body string, hadDegraded bool, err error) {
 	show := sd.ShowDetails
 	resolved := b.resolveAll(ctx, sd)
 
 	items := make([]item, 0, len(sd.Diffusions))
 	for _, d := range sd.Diffusions {
-		it, ok := b.buildItem(d, resolved[d.ID])
+		res := resolved[d.ID]
+		it, ok := b.buildItem(d, res)
 		if !ok {
 			continue
 		}
 		items = append(items, it)
+		if isDegraded(d, res) {
+			hadDegraded = true
+		}
 	}
 
 	ch := channel{
@@ -141,11 +149,27 @@ func (b Builder) Build(ctx context.Context, sd radiofrance.ShowDiffusions, nextP
 		Channel:         ch,
 	}
 
-	body, err := xml.MarshalIndent(doc, "", "  ")
+	xmlBytes, err := xml.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("marshaling RSS feed: %w", err)
+		return "", false, fmt.Errorf("marshaling RSS feed: %w", err)
 	}
-	return xml.Header + string(body), nil
+	return xml.Header + string(xmlBytes), hadDegraded, nil
+}
+
+// isDegraded reports whether res still needs background enrichment for d:
+// either its duration isn't known yet, or - for a rerun - its origin
+// diffusion's CreatedTime hasn't resolved yet (see
+// DescriptionResolver.ResolveDescription). A rerun whose origin genuinely
+// has no CreatedTime is a rare false positive here; it just costs one
+// harmless extra feed-cache invalidation check down the line.
+func isDegraded(d radiofrance.Diffusion, res resolution) bool {
+	if res.duration == 0 {
+		return true
+	}
+	if d.OriginDiffusionID() != "" && res.originCreatedTime == 0 {
+		return true
+	}
+	return false
 }
 
 // resolution is what resolveAll produces per diffusion.
