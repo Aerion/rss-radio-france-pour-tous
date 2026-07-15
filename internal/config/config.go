@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -25,11 +24,6 @@ type Config struct {
 	// DatabaseURL is the Postgres connection string for the analytics
 	// request log.
 	DatabaseURL string
-
-	// BlockedUserAgents is a lowercased list of substrings; any request to
-	// a feed-serving route whose User-Agent header contains one of these
-	// is rejected. Empty means no blocking.
-	BlockedUserAgents []string
 
 	// FeedCacheTTL is how long a rendered feed page is served from the
 	// in-memory feed cache before a plain rebuild.
@@ -109,7 +103,6 @@ func Load() (Config, error) {
 		PublicBaseURL:            baseURL,
 		RadioFranceAPIToken:      token,
 		DatabaseURL:              databaseURL,
-		BlockedUserAgents:        parseBlockedUserAgents(os.Getenv("BLOCKED_USER_AGENTS")),
 		FeedCacheTTL:             feedCacheTTL,
 		FeedCacheSweepInterval:   feedCacheSweepInterval,
 		ManifestationCacheMaxAge: manifestationCacheMaxAge,
@@ -144,18 +137,4 @@ func intEnv(name string, def int) (int, error) {
 		return 0, fmt.Errorf("%s: invalid integer %q: %w", name, raw, err)
 	}
 	return n, nil
-}
-
-// parseBlockedUserAgents splits a comma-separated list of substrings,
-// trimming whitespace and lowercasing each entry for case-insensitive
-// matching, and dropping any empty entries (e.g. from a trailing comma).
-func parseBlockedUserAgents(raw string) []string {
-	var blocked []string
-	for _, entry := range strings.Split(raw, ",") {
-		entry = strings.ToLower(strings.TrimSpace(entry))
-		if entry != "" {
-			blocked = append(blocked, entry)
-		}
-	}
-	return blocked
 }

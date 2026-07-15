@@ -64,7 +64,6 @@ type Server struct {
 	enrichmentStatus  EnrichmentStatus
 	showObserver      ShowObserver
 	publicBaseURL     string
-	blockedUserAgents []string
 }
 
 // ServerConfig holds NewServer's dependencies. It exists as a named-field
@@ -90,10 +89,6 @@ type ServerConfig struct {
 	EnrichmentStatus      EnrichmentStatus
 	// ShowObserver may be nil to skip the per-show request metric.
 	ShowObserver ShowObserver
-	// BlockedUserAgents is a lowercased list of substrings (see
-	// config.Config.BlockedUserAgents); requests to feed-serving routes
-	// with a matching User-Agent get a 403.
-	BlockedUserAgents []string
 }
 
 // NewServer builds a Server from cfg.
@@ -112,7 +107,6 @@ func NewServer(cfg ServerConfig) *Server {
 		enrichmentStatus:  cfg.EnrichmentStatus,
 		showObserver:      cfg.ShowObserver,
 		publicBaseURL:     cfg.PublicBaseURL,
-		blockedUserAgents: cfg.BlockedUserAgents,
 	}
 }
 
@@ -138,7 +132,7 @@ func (s *Server) Routes(instrs ...Instrumenter) http.Handler {
 	register("GET /{$}", "home", s.handleHome)
 	register("GET /robots.txt", "robots", s.handleRobots)
 	register("GET /search/", "search", s.handleSearch)
-	register("GET /rss/{showId}", "rss", s.blockUserAgent(s.handleRSS))
-	register("GET /audio/{manifestationId}", "audio", s.blockUserAgent(s.handleAudio))
+	register("GET /rss/{showId}", "rss", s.handleRSS)
+	register("GET /audio/{manifestationId}", "audio", s.handleAudio)
 	return mux
 }

@@ -91,7 +91,6 @@ func run() error {
 		FeedCache:             feedCache,
 		EnrichmentStatus:      episodeCache,
 		ShowObserver:          obs,
-		BlockedUserAgents:     cfg.BlockedUserAgents,
 	})
 
 	mux := http.NewServeMux()

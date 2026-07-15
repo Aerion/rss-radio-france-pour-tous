@@ -8,7 +8,6 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?PUBLIC_BASE_URL must be set, see .env.example}
       RADIOFRANCE_API_TOKEN: ${RADIOFRANCE_API_TOKEN:?RADIOFRANCE_API_TOKEN must be set, see .env.example}
       DATABASE_URL: postgres://rss:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set, see .env.example}@postgres:5432/rss?sslmode=disable
-      BLOCKED_USER_AGENTS: ${BLOCKED_USER_AGENTS:-}
       FEED_CACHE_TTL: ${FEED_CACHE_TTL:-}
       FEED_CACHE_SWEEP_INTERVAL: ${FEED_CACHE_SWEEP_INTERVAL:-}
       MANIFESTATION_CACHE_MAX_AGE: ${MANIFESTATION_CACHE_MAX_AGE:-}
@@ -92,8 +91,12 @@ services:
 
   reverseproxy:
     image: nginx:1.27-alpine
+    environment:
+      # Non-matching by default ("a^": an "a" can never be followed by the
+      # start of the string) - see proxy/templates/default.conf.template.
+      BLOCKED_UA_REGEX: ${BLOCKED_UA_REGEX:-a^}
     volumes:
-      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./proxy/templates:/etc/nginx/templates:ro
     ports:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
