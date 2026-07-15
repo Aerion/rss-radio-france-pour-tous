@@ -315,6 +315,39 @@
           "refId": "B"
         }
       ]
+    },
+    {
+      "id": 19,
+      "title": "Episodes cached (total)",
+      "description": "Total rows in manifestation_cache, the Postgres-backed episode cache.",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 64 },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT count(*) AS episodes FROM manifestation_cache",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "title": "Episodes cached by show",
+      "description": "manifestation_cache rows per show, joined against shows for a friendly title (falls back to show_id if the show hasn't been resolved yet).",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 64 },
+      "options": { "sortBy": [{ "displayName": "episodes", "desc": true }] },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT coalesce(s.title, m.show_id, 'unknown') AS show, count(*) AS episodes\nFROM manifestation_cache m\nLEFT JOIN shows s ON s.show_id = m.show_id\nGROUP BY 1\nORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }
