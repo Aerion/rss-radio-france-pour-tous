@@ -32,7 +32,36 @@ loki.source.docker "containers" {
   labels        = {"job" = "docker"}
   relabel_rules = discovery.relabel.containers.rules
 
+  forward_to = [loki.process.reverseproxy.receiver]
+}
+
+// Promotes the nginx access log's "route" field (the first URL path
+// segment - see proxy/templates/default.conf.template) to a real Loki
+// label, so Grafana's dashboard variable editor can list its values: that
+// editor only calls Loki's plain label-values API, which doesn't support a
+// LogQL parser stage, so a value only reachable via `| json` at query time
+// can't back a dashboard variable. Loki's structured metadata (the usual
+// place for high-cardinality per-line fields) doesn't work here either -
+// its values aren't exposed through that same API in this Loki version.
+// Safe as a real label because route is low-cardinality: it's always one
+// of a handful of known app routes, or (for scanner/bot noise) a path
+// segment, never something per-request like a full URI or user agent -
+// those stay query-time-only fields, extracted with `| json` as before.
+// Non-reverseproxy log lines pass through this stage untouched.
+loki.process "reverseproxy" {
   forward_to = [loki.write.default.receiver]
+
+  stage.match {
+    selector = "{service=\"reverseproxy\"}"
+
+    stage.json {
+      expressions = { route = "route" }
+    }
+
+    stage.labels {
+      values = { route = "route" }
+    }
+  }
 }
 
 loki.write "default" {

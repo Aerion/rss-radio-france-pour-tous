@@ -1,0 +1,271 @@
+{
+  "uid": "radio-france-rss-nginx",
+  "title": "Radio France RSS - Nginx edge",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "route",
+        "label": "Route",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values({service=\"reverseproxy\"}, route)",
+        "regex": "/^(?!grafana$).+$/",
+        "refresh": 2,
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": ["All"], "value": ["$__all"] },
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate by status class",
+      "description": "Filtered by the route picker above (grafana is excluded from the option list).",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(rate({service=\"reverseproxy\", route=~\"$route\"} | json status=\"status\" | __error__=\"\" | status >= 200 | status < 300 [5m]))",
+          "legendFormat": "2xx",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(rate({service=\"reverseproxy\", route=~\"$route\"} | json status=\"status\" | __error__=\"\" | status >= 300 | status < 400 [5m]))",
+          "legendFormat": "3xx",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(rate({service=\"reverseproxy\", route=~\"$route\"} | json status=\"status\" | __error__=\"\" | status >= 400 | status < 500 [5m]))",
+          "legendFormat": "4xx",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(rate({service=\"reverseproxy\", route=~\"$route\"} | json status=\"status\" | __error__=\"\" | status >= 500 [5m]))",
+          "legendFormat": "5xx",
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Request rate by route",
+      "description": "app traffic only, grouped by the first URL path segment (rss, audio, search, home, robots.txt, ...).",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum by (route) (rate({service=\"reverseproxy\", route=~\"$route\"} [5m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Blocked requests (User-Agent block)",
+      "description": "403s from the BLOCKED_UA_REGEX map at the nginx edge - see proxy/templates/default.conf.template. Filtered by the route picker above.",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(rate({service=\"reverseproxy\", route=~\"$route\"} | json blocked_ua=\"blocked_ua\" | __error__=\"\" | blocked_ua=\"1\" [5m]))",
+          "legendFormat": "blocked",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Response size sent",
+      "description": "Filtered by the route picker above (grafana is excluded from the option list).",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(rate({service=\"reverseproxy\", route=~\"$route\"} | json body_bytes_sent=\"body_bytes_sent\" | __error__=\"\" | unwrap body_bytes_sent [5m]))",
+          "legendFormat": "bytes sent",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Request duration (p50 / p95)",
+      "description": "nginx's own $request_time - edge to response, includes time spent proxying to the app. Filtered by the route picker above.",
+      "type": "timeseries",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "quantile_over_time(0.50, {service=\"reverseproxy\", route=~\"$route\"} | json request_time=\"request_time\" | __error__=\"\" | unwrap request_time [5m])",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "quantile_over_time(0.95, {service=\"reverseproxy\", route=~\"$route\"} | json request_time=\"request_time\" | __error__=\"\" | unwrap request_time [5m])",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Top requested URIs (excl. rss/audio)",
+      "description": "rss and audio URIs are one-off per show/episode (uuid path) and per-show breakdown already exists in the Analytics dashboard - including them here blows past Loki's per-query series limit without being useful. This panel is for spotting scanner/bot noise on other paths.",
+      "type": "table",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "format": "table",
+          "instant": true,
+          "expr": "topk(10, sum by (uri) (count_over_time({service=\"reverseproxy\", route=~\"$route\", route!~\"rss|audio\"} | json uri=\"uri\" | __error__=\"\" [$__range])))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Top user agents",
+      "description": "Filtered by the route picker above (grafana is excluded from the option list).",
+      "type": "table",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "format": "table",
+          "instant": true,
+          "expr": "topk(10, sum by (user_agent) (count_over_time({service=\"reverseproxy\", route=~\"$route\"} | json user_agent=\"user_agent\" | __error__=\"\" [$__range])))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Top user agents fetching non-podcast pages",
+      "description": "Excludes rss/audio (legitimate podcast clients) to surface who's crawling the index, search, robots.txt, and other one-off/scanner paths - useful for deciding what to add to BLOCKED_UA_REGEX.",
+      "type": "table",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "format": "table",
+          "instant": true,
+          "expr": "topk(10, sum by (user_agent) (count_over_time({service=\"reverseproxy\", route=~\"$route\", route!~\"rss|audio\"} | json user_agent=\"user_agent\" | __error__=\"\" [$__range])))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Top IPs by route",
+      "description": "Real client IP, resolved from Cloudflare's CF-Connecting-IP header at the nginx edge (see proxy/templates/default.conf.template) - the app sits behind a Cloudflare Tunnel, so the raw TCP source is otherwise just the docker bridge gateway. Filtered by the route picker above.",
+      "type": "table",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "format": "table",
+          "instant": true,
+          "expr": "topk(15, sum by (route, remote_addr) (count_over_time({service=\"reverseproxy\", route=~\"$route\"} | json remote_addr=\"remote_addr\" | __error__=\"\" [$__range])))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Top shows by RSS requests",
+      "description": "Live equivalent of the Postgres-only \"RSS requests per show\" panel on the Analytics dashboard, but sourced straight from the nginx access log instead of the app's request_log table: show_id is pulled out of the uri (/rss/{show_id}) with a regex, then joined against the shows table just for the title. Doesn't depend on any app-side per-request logging.",
+      "type": "table",
+      "datasource": { "type": "datasource", "uid": "-- Mixed --" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 40 },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "format": "table",
+          "instant": true,
+          "expr": "topk(15, sum by (show_id) (count_over_time({service=\"reverseproxy\", route=\"rss\"} | regexp \"\\\"uri\\\":\\\"/rss/(?P<show_id>[^\\\"]+)\\\"\" [$__range])))",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT show_id, title FROM shows",
+          "refId": "B"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": { "byField": "show_id", "mode": "outer" }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "show_id": false },
+            "renameByName": { "Value": "Requests", "title": "Show" }
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "RSS pagination: non-zero page requests",
+      "description": "?page=N on /rss/{showId} (see internal/httpapi/handlers.go) fetches older episodes past the feed's first page - 0-indexed, so page=0 is the default/first page and not shown here. Shows who's paging deep into a show's back catalog.",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 50 },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=\"reverseproxy\", route=~\"$route\"} | json page=\"page\" | __error__=\"\" | page!=\"\" | page!=\"0\"",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Recent nginx logs",
+      "description": "Filtered by the route picker above (grafana is excluded from the option list).",
+      "type": "logs",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 58 },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=\"reverseproxy\", route=~\"$route\"}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
