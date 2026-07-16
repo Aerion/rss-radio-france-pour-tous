@@ -13,23 +13,20 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Aerion/rss-radio-france-pour-tous/internal/analytics"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/config"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/episodecache"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/feedcache"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/httpapi"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/observability"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/radiofrance"
+	"github.com/Aerion/rss-radio-france-pour-tous/internal/shows"
 )
 
 const (
 	serviceName = "radio-france-rss"
 
-	analyticsBufferSize = 1000
-	analyticsWorkers    = 2
-
-	requestLogRetention        = 90 * 24 * time.Hour
-	requestLogRetentionCadence = time.Hour
+	showRegistryBufferSize = 1000
+	showRegistryWorkers    = 2
 )
 
 func main() {
@@ -68,8 +65,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	analyticsWriter := analytics.NewWriter(pool, obs, analyticsBufferSize, analyticsWorkers)
-	go analyticsWriter.RunRetention(ctx, requestLogRetention, requestLogRetentionCadence)
+	showRegistry := shows.NewRegistry(pool, showRegistryBufferSize, showRegistryWorkers)
 
 	client := radiofrance.NewClient(http.DefaultClient, cfg.RadioFranceAPIToken, obs)
 
@@ -91,10 +87,11 @@ func run() error {
 		FeedCache:             feedCache,
 		EnrichmentStatus:      episodeCache,
 		ShowObserver:          obs,
+		ShowRegistry:          showRegistry,
 	})
 
 	mux := http.NewServeMux()
-	mux.Handle("/", server.Routes(obs, analyticsWriter))
+	mux.Handle("/", server.Routes(obs))
 	mux.Handle("GET /metrics", obs.Handler())
 
 	httpServer := &http.Server{

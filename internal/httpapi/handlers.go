@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Aerion/rss-radio-france-pour-tous/internal/analytics"
 	"github.com/Aerion/rss-radio-france-pour-tous/internal/feedcache"
 )
 
@@ -61,11 +60,13 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 	return json.NewEncoder(w).Encode(out)
 }
 
-// observeShow records the show an /rss/ request resolved to, both for the
-// analytics event Writer.Wrap eventually inserts (see analytics.WithShow)
-// and, if configured, the show_feed_requests_total metric.
+// observeShow records the show an /rss/ request resolved to, both to keep
+// the shows table current (see ShowRegistry) and, if configured, for the
+// show_feed_requests_total metric.
 func (s *Server) observeShow(ctx context.Context, showID, showTitle string) {
-	analytics.WithShow(ctx, showID, showTitle)
+	if s.showRegistry != nil {
+		s.showRegistry.Record(ctx, showID, showTitle)
+	}
 	if s.showObserver != nil {
 		s.showObserver.ObserveShowRequest(ctx, showID)
 	}
@@ -159,11 +160,13 @@ func (s *Server) handleAudio(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if showID != "" {
-		// Backfills the show_id Phase 3 otherwise leaves NULL on /audio/
-		// analytics rows - populated once the corresponding show's feed has
-		// been built at least once (see episodecache.Resolver.Resolve).
-		analytics.WithShow(r.Context(), showID, showTitle)
+	if showID != "" && s.showRegistry != nil {
+		// Keeps the shows table current even for a show whose /rss/ feed
+		// hasn't been requested yet (only /audio/, e.g. from a link embedded
+		// in a feed built before this show was resolvable) - populated once
+		// the corresponding show's feed has been built at least once (see
+		// episodecache.Resolver.Resolve).
+		s.showRegistry.Record(r.Context(), showID, showTitle)
 	}
 
 	http.Redirect(w, r, mp3URL, http.StatusFound)

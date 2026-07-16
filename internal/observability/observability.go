@@ -41,8 +41,6 @@ type Observability struct {
 	radioFranceRequests        metric.Int64Counter
 	radioFranceDuration        metric.Float64Histogram
 
-	analyticsEvents metric.Int64Counter
-
 	manifestationCacheLookups metric.Int64Counter
 
 	feedCacheLookups metric.Int64Counter
@@ -101,11 +99,6 @@ func New(serviceName string) (*Observability, error) {
 	if err != nil {
 		return nil, err
 	}
-	analyticsEvents, err := meter.Int64Counter("analytics_events_total",
-		metric.WithDescription("Outcome of each analytics request-log event, labeled by outcome (written/dropped/failed) - tells you whether usage dashboards can be trusted."))
-	if err != nil {
-		return nil, err
-	}
 	manifestationCacheLookups, err := meter.Int64Counter("manifestation_cache_lookups_total",
 		metric.WithDescription("Manifestation cache lookups, labeled by outcome (hit/miss) - how often we avoid an extra Radio France API call."))
 	if err != nil {
@@ -150,7 +143,6 @@ func New(serviceName string) (*Observability, error) {
 		radioFranceRequestsStarted: radioFranceRequestsStarted,
 		radioFranceRequests:        radioFranceRequests,
 		radioFranceDuration:        radioFranceDuration,
-		analyticsEvents:            analyticsEvents,
 		manifestationCacheLookups:  manifestationCacheLookups,
 		feedCacheLookups:           feedCacheLookups,
 		feedCacheEntries:           feedCacheEntries,
@@ -190,11 +182,6 @@ func (o *Observability) ObserveRequest(ctx context.Context, endpoint string, ok 
 		attribute.String("endpoint", endpoint), attribute.String("status", status)))
 	o.radioFranceDuration.Record(ctx, duration.Seconds(), metric.WithAttributes(
 		attribute.String("endpoint", endpoint)))
-}
-
-// ObserveAnalyticsEvent implements analytics.MetricsRecorder.
-func (o *Observability) ObserveAnalyticsEvent(outcome string) {
-	o.analyticsEvents.Add(context.Background(), 1, metric.WithAttributes(attribute.String("outcome", outcome)))
 }
 
 // ObserveCacheLookup implements episodecache.CacheObserver.

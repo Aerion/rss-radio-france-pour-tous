@@ -47,7 +47,7 @@ type EnrichmentStatus interface {
 // elsewhere (see Instrumenter/observability.Wrap) - the number of distinct
 // Radio France shows is small and stable enough that a label per show is
 // fine; the friendly title is looked up separately (see the shows table,
-// populated by internal/analytics.Writer) rather than carried here, to keep
+// populated by internal/shows.Registry) rather than carried here, to keep
 // this metric's cardinality and this interface minimal. Defined here rather
 // than in a metrics package so this package depends only on the narrow
 // interface it needs; observability.Observability implements it.
@@ -55,15 +55,25 @@ type ShowObserver interface {
 	ObserveShowRequest(ctx context.Context, showID string)
 }
 
+// ShowRegistry keeps the shows table (show_id -> title) current as
+// requests reveal a show, for Grafana panels that join show_id-labeled
+// metrics/logs against a friendly display name. Defined here rather than
+// in a dedicated package so this package depends only on the narrow
+// interface it needs; *shows.Registry implements it.
+type ShowRegistry interface {
+	Record(ctx context.Context, showID, title string)
+}
+
 // Server holds the dependencies shared by all HTTP handlers.
 type Server struct {
-	api               API
-	feedBuilder       feed.Builder
-	audioResolver     AudioResolver
-	feedCache         *feedcache.Cache
-	enrichmentStatus  EnrichmentStatus
-	showObserver      ShowObserver
-	publicBaseURL     string
+	api              API
+	feedBuilder      feed.Builder
+	audioResolver    AudioResolver
+	feedCache        *feedcache.Cache
+	enrichmentStatus EnrichmentStatus
+	showObserver     ShowObserver
+	showRegistry     ShowRegistry
+	publicBaseURL    string
 }
 
 // ServerConfig holds NewServer's dependencies. It exists as a named-field
@@ -89,6 +99,8 @@ type ServerConfig struct {
 	EnrichmentStatus      EnrichmentStatus
 	// ShowObserver may be nil to skip the per-show request metric.
 	ShowObserver ShowObserver
+	// ShowRegistry may be nil to skip keeping the shows table current.
+	ShowRegistry ShowRegistry
 }
 
 // NewServer builds a Server from cfg.
@@ -102,18 +114,18 @@ func NewServer(cfg ServerConfig) *Server {
 			DescriptionResolver: cfg.DescriptionResolver,
 			TitleResolver:       cfg.TitleResolver,
 		},
-		audioResolver:     cfg.AudioResolver,
-		feedCache:         cfg.FeedCache,
-		enrichmentStatus:  cfg.EnrichmentStatus,
-		showObserver:      cfg.ShowObserver,
-		publicBaseURL:     cfg.PublicBaseURL,
+		audioResolver:    cfg.AudioResolver,
+		feedCache:        cfg.FeedCache,
+		enrichmentStatus: cfg.EnrichmentStatus,
+		showObserver:     cfg.ShowObserver,
+		showRegistry:     cfg.ShowRegistry,
+		publicBaseURL:    cfg.PublicBaseURL,
 	}
 }
 
-// Instrumenter wraps a handler under a short, low-cardinality route name -
-// e.g. to record metrics/logs (*observability.Observability) or to
-// log an analytics event (*analytics.Writer). Declared here so this
-// package doesn't need to import either of those directly.
+// Instrumenter wraps a handler under a short, low-cardinality route name,
+// e.g. to record metrics/logs (*observability.Observability). Declared
+// here so this package doesn't need to import that directly.
 type Instrumenter interface {
 	Wrap(route string, h http.HandlerFunc) http.HandlerFunc
 }
