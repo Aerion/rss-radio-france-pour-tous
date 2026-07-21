@@ -1,6 +1,6 @@
 # RSS Radio France pour tous
 
-Le [site](https://radio-france-rss.aerion.workers.dev/) pour rétablir les flux RSS de Radio France.
+Le [site](https://rss-rf.aerion.me/) pour rétablir les flux RSS de Radio France.
 
 ## Contexte
 
@@ -10,7 +10,7 @@ Cependant, les flux RSS (et Apple Podcasts) ne contiennent qu'un sous-ensemble d
 
 ## Solution
 
-Le site [https://radio-france-rss.aerion.workers.dev/](https://radio-france-rss.aerion.workers.dev/) propose une interface de recherche des émissions des podcasts de Radio France et un lien permettant d'obtenir un flux RSS contenant tous les épisodes.
+Le site [https://rss-rf.aerion.me/](https://rss-rf.aerion.me/) propose une interface de recherche des émissions des podcasts de Radio France et un lien permettant d'obtenir un flux RSS contenant tous les épisodes.
 
 Ce flux RSS peut ensuite être ajouté à votre application de podcasts (e.g. [AntennaPod](https://antennapod.org/)) et enlever la dépendance à l'application Radio France.
 
