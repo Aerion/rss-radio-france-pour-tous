@@ -348,6 +348,107 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 21,
+      "title": "Postgres database size",
+      "description": "Total on-disk size of the whole database (pg_database_size), across all tables and indexes.",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 72 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT pg_database_size(current_database()) AS bytes",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "title": "Table sizes",
+      "description": "On-disk size per table, including indexes and TOAST (pg_total_relation_size). Covers feed_cache, manifestation_cache, diffusion_origin_image_cache, and shows.",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 8, "w": 9, "x": 6, "y": 72 },
+      "options": { "sortBy": [{ "displayName": "bytes", "desc": true }] },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT relname AS table, pg_total_relation_size(relid) AS bytes\nFROM pg_catalog.pg_statio_user_tables\nORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "title": "Active connections",
+      "description": "Current Postgres connections to this database (pg_stat_activity).",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 4, "w": 9, "x": 15, "y": 72 },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT count(*) AS connections FROM pg_stat_activity WHERE datname = current_database()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "title": "Buffer cache hit ratio",
+      "description": "Share of reads served from Postgres's shared buffer cache rather than disk (pg_stat_database). A sustained drop suggests the working set no longer fits in memory.",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 4, "w": 9, "x": 15, "y": 76 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT round(sum(blks_hit)::numeric / nullif(sum(blks_hit) + sum(blks_read), 0), 4) AS ratio\nFROM pg_stat_database\nWHERE datname = current_database()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "title": "Dead tuples per table (vacuum signal)",
+      "description": "n_dead_tup per table (pg_stat_user_tables) - a bloat/vacuum-pressure signal. Rows grow here between autovacuum passes on tables with frequent ON CONFLICT upserts (feed_cache, manifestation_cache, diffusion_origin_image_cache).",
+      "type": "table",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 80 },
+      "options": { "sortBy": [{ "displayName": "dead_tuples", "desc": true }] },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT relname AS table, n_dead_tup AS dead_tuples FROM pg_stat_user_tables ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "title": "Stale manifestation_cache rows",
+      "description": "manifestation_cache rows whose expires_at is already in the past - nothing currently prunes these, so this surfaces the unbounded-growth risk directly rather than leaving it invisible.",
+      "type": "stat",
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 80 },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "postgres" },
+          "format": "table",
+          "rawSql": "SELECT count(*) AS stale_rows FROM manifestation_cache WHERE expires_at < now()",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }
