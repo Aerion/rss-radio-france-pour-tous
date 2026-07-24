@@ -104,8 +104,7 @@ func (s *Server) handleRSS(w http.ResponseWriter, r *http.Request) error {
 // (possibly slower) feed build, so a request that fails partway through
 // building still gets attributed rather than showing up as show-less.
 func (s *Server) resolveFeed(ctx context.Context, showID string, page int, requestPath string) (body string, err error) {
-	key := feedcache.Key(showID, page)
-	if entry, ok := s.feedCache.Get(ctx, key); ok {
+	if entry, ok := s.feedCache.Get(ctx, showID, page); ok {
 		// A page cached degraded (some items still missing enrichment)
 		// stays fresh from the feed cache's point of view until its TTL
 		// elapses - but if background enrichment has since caught up,
@@ -122,7 +121,7 @@ func (s *Server) resolveFeed(ctx context.Context, showID string, page int, reque
 			s.observeShow(ctx, entry.ShowID, entry.ShowTitle)
 			return entry.Body, nil
 		}
-		s.feedCache.Invalidate(key)
+		s.feedCache.Invalidate(ctx, showID, page)
 	}
 
 	showDiffusions, err := s.api.GetShowDiffusions(ctx, showID, page)
@@ -141,7 +140,7 @@ func (s *Server) resolveFeed(ctx context.Context, showID string, page int, reque
 		return "", err
 	}
 
-	s.feedCache.Set(key, feedcache.Entry{
+	s.feedCache.Set(ctx, showID, page, feedcache.Entry{
 		Body:           body,
 		ShowID:         showID,
 		ShowTitle:      showDiffusions.ShowDetails.Title,

@@ -100,12 +100,11 @@ func TestObserveFeedCacheLookup_RecordsOutcome(t *testing.T) {
 	}
 }
 
-func TestAdjustFeedCacheEntries_TracksCurrentCount(t *testing.T) {
+func TestSetFeedCacheEntries_ReportsCurrentCount(t *testing.T) {
 	o := newTestObservability(t)
 	ctx := context.Background()
-	o.AdjustFeedCacheEntries(ctx, 1)
-	o.AdjustFeedCacheEntries(ctx, 1)
-	o.AdjustFeedCacheEntries(ctx, -1)
+	o.SetFeedCacheEntries(ctx, 3)
+	o.SetFeedCacheEntries(ctx, 1)
 
 	body := scrapeMetrics(t, o)
 	if !strings.Contains(body, "feed_cache_entries 1") {

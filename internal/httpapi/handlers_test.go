@@ -20,7 +20,7 @@ func (noopInstrumenter) Wrap(route string, h http.HandlerFunc) http.HandlerFunc 
 
 func newTestServer(t *testing.T, api API, audioResolver AudioResolver) http.Handler {
 	t.Helper()
-	return newServerForTest(t, api, audioResolver, feedcache.New(time.Hour, nil), &fakeEnrichmentStatus{}).Routes(noopInstrumenter{})
+	return newServerForTest(t, api, audioResolver, feedcache.New(feedcache.NewMemStore(), time.Hour, nil), &fakeEnrichmentStatus{}).Routes(noopInstrumenter{})
 }
 
 func newServerForTest(t *testing.T, api API, audioResolver AudioResolver, feedCache *feedcache.Cache, enrichmentStatus EnrichmentStatus) *Server {
@@ -182,7 +182,7 @@ func TestHandleRequest_RSSFeed_DegradedCacheHitStillPendingServesStaleWithoutRec
 	enrichment := &fakeEnrichmentStatus{allResolved: false}
 	server := NewServer(ServerConfig{
 		API: api, PublicBaseURL: "https://radio-france-rss.example.com", AudioResolver: &fakeAudioResolver{},
-		FeedCache: feedcache.New(time.Hour, nil), EnrichmentStatus: enrichment,
+		FeedCache: feedcache.New(feedcache.NewMemStore(), time.Hour, nil), EnrichmentStatus: enrichment,
 	})
 	h := server.Routes(noopInstrumenter{})
 
@@ -216,7 +216,7 @@ func TestHandleRequest_RSSFeed_DegradedCacheHitButNowResolvedInvalidatesAndRebui
 	enrichment := &fakeEnrichmentStatus{allResolved: true}
 	server := NewServer(ServerConfig{
 		API: api, PublicBaseURL: "https://radio-france-rss.example.com", AudioResolver: &fakeAudioResolver{},
-		FeedCache: feedcache.New(time.Hour, nil), EnrichmentStatus: enrichment,
+		FeedCache: feedcache.New(feedcache.NewMemStore(), time.Hour, nil), EnrichmentStatus: enrichment,
 	})
 	h := server.Routes(noopInstrumenter{})
 
@@ -237,7 +237,7 @@ func TestHandleRequest_RSSFeed_NonDegradedCacheHitSkipsEnrichmentCheck(t *testin
 	resolver := fakeManifestationResolver{url: "https://cdn.example.com/audio.mp3", duration: 90 * time.Second}
 	server := NewServer(ServerConfig{
 		API: api, PublicBaseURL: "https://radio-france-rss.example.com", ManifestationResolver: resolver,
-		AudioResolver: &fakeAudioResolver{}, FeedCache: feedcache.New(time.Hour, nil), EnrichmentStatus: enrichment,
+		AudioResolver: &fakeAudioResolver{}, FeedCache: feedcache.New(feedcache.NewMemStore(), time.Hour, nil), EnrichmentStatus: enrichment,
 	})
 	h := server.Routes(noopInstrumenter{})
 
@@ -261,7 +261,7 @@ func TestHandleRequest_RSSFeed_NonDegradedCacheHitButExpiredInvalidatesAndRebuil
 	resolver := fakeManifestationResolver{url: "https://cdn.example.com/audio.mp3", duration: 90 * time.Second, expiresAt: &expired}
 	server := NewServer(ServerConfig{
 		API: api, PublicBaseURL: "https://radio-france-rss.example.com", ManifestationResolver: resolver,
-		AudioResolver: &fakeAudioResolver{}, FeedCache: feedcache.New(time.Hour, nil), EnrichmentStatus: &fakeEnrichmentStatus{},
+		AudioResolver: &fakeAudioResolver{}, FeedCache: feedcache.New(feedcache.NewMemStore(), time.Hour, nil), EnrichmentStatus: &fakeEnrichmentStatus{},
 	})
 	h := server.Routes(noopInstrumenter{})
 
@@ -282,7 +282,7 @@ func TestHandleRequest_RSSFeed_NonDegradedCacheHitNotYetExpiredServesFromCache(t
 	resolver := fakeManifestationResolver{url: "https://cdn.example.com/audio.mp3", duration: 90 * time.Second, expiresAt: &notYetExpired}
 	server := NewServer(ServerConfig{
 		API: api, PublicBaseURL: "https://radio-france-rss.example.com", ManifestationResolver: resolver,
-		AudioResolver: &fakeAudioResolver{}, FeedCache: feedcache.New(time.Hour, nil), EnrichmentStatus: &fakeEnrichmentStatus{},
+		AudioResolver: &fakeAudioResolver{}, FeedCache: feedcache.New(feedcache.NewMemStore(), time.Hour, nil), EnrichmentStatus: &fakeEnrichmentStatus{},
 	})
 	h := server.Routes(noopInstrumenter{})
 

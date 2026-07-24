@@ -73,7 +73,7 @@ func run() error {
 	episodeCache := episodecache.NewResolver(episodecache.NewStore(pool), client, obs, enricher, cfg.ManifestationCacheMaxAge)
 	go enricher.Run(ctx, episodeCache, cfg.EnrichmentWorkers)
 
-	feedCache := feedcache.New(cfg.FeedCacheTTL, obs)
+	feedCache := feedcache.New(feedcache.NewStore(pool), cfg.FeedCacheTTL, obs)
 	go feedCache.Sweep(ctx, cfg.FeedCacheSweepInterval)
 
 	server := httpapi.NewServer(httpapi.ServerConfig{

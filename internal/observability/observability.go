@@ -44,7 +44,7 @@ type Observability struct {
 	manifestationCacheLookups metric.Int64Counter
 
 	feedCacheLookups metric.Int64Counter
-	feedCacheEntries metric.Int64UpDownCounter
+	feedCacheEntries metric.Int64Gauge
 
 	enrichmentQueueEnqueued metric.Int64Counter
 	enrichmentQueueDepth    metric.Int64UpDownCounter
@@ -109,7 +109,7 @@ func New(serviceName string) (*Observability, error) {
 	if err != nil {
 		return nil, err
 	}
-	feedCacheEntries, err := meter.Int64UpDownCounter("feed_cache_entries",
+	feedCacheEntries, err := meter.Int64Gauge("feed_cache_entries",
 		metric.WithDescription("Current number of rendered feed pages held in the feed cache."))
 	if err != nil {
 		return nil, err
@@ -194,10 +194,9 @@ func (o *Observability) ObserveFeedCacheLookup(ctx context.Context, outcome stri
 	o.feedCacheLookups.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
 }
 
-// AdjustFeedCacheEntries implements feedcache.Observer. delta is positive
-// when an entry is added and negative when one is evicted/invalidated.
-func (o *Observability) AdjustFeedCacheEntries(ctx context.Context, delta int64) {
-	o.feedCacheEntries.Add(ctx, delta)
+// SetFeedCacheEntries implements feedcache.Observer.
+func (o *Observability) SetFeedCacheEntries(ctx context.Context, count int64) {
+	o.feedCacheEntries.Record(ctx, count)
 }
 
 // ObserveEnrichmentEnqueued implements episodecache.EnrichmentObserver.
