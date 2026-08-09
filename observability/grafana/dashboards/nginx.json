@@ -266,6 +266,23 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 13,
+      "title": "Top user agents by distinct RSS feeds requested",
+      "description": "Counts how many different shows (show_id, pulled out of the /rss/{show_id} uri) each user agent has fetched - a client hammering many feeds ranks higher here than one repeatedly polling a single feed. Always scoped to the rss route, independent of the route picker above.",
+      "type": "table",
+      "datasource": { "type": "loki", "uid": "loki" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 66 },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "format": "table",
+          "instant": true,
+          "expr": "topk(15, count by (user_agent) (sum by (user_agent, show_id) (count_over_time({service=\"reverseproxy\", route=\"rss\"} | json user_agent=\"user_agent\" | __error__=\"\" | regexp \"\\\"uri\\\":\\\"/rss/(?P<show_id>[^\\\"]+)\\\"\" [$__range]))))",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }

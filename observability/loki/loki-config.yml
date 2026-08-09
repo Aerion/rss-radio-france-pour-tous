@@ -26,3 +26,7 @@ schema_config:
 
 limits_config:
   allow_structured_metadata: true
+  # Default (500) is too low once queries group by show_id: the catalog has
+  # 1600+ shows, so even a single relative time window can produce more
+  # distinct show_id series than that (see nginx.json panels 12 and 13).
+  max_query_series: 10000
