@@ -187,11 +187,22 @@ type manifestationResponse struct {
 // included.manifestations on a diffusions/shows call requesting
 // include=manifestations.
 type rawManifestation struct {
-	// URL is the playable/downloadable audio file URL. Two distinct CDN
-	// hosts are used across a diffusion's sibling manifestations:
-	// media.radiofrance-podcast.net (streaming) and proxycast.radiofrance.fr
-	// (download).
+	// URL is the playable/downloadable audio file URL when MediaType denotes
+	// real audio. Two distinct CDN hosts are used across a diffusion's
+	// audio sibling manifestations: media.radiofrance-podcast.net
+	// (streaming) and proxycast.radiofrance.fr (download). Since September
+	// 2026, URL can also be a YouTube/Dailymotion page instead - see
+	// MediaType.
 	URL string `json:"url"`
+	// MediaType classifies what URL actually points to. "mp3" is Radio
+	// France's own label for a real playable audio file (used for both
+	// .mp3 and .m4a URLs, across both known CDN hosts). Since September
+	// 2026, siblings with MediaType "youtube" or "dailymotion" have also
+	// started appearing - video-hosting page URLs, not audio - sometimes
+	// flagged Principal simultaneously with the real audio manifestation
+	// (see Principal). toDetails filters these out via
+	// IsPlayableAudioManifestation.
+	MediaType string `json:"mediaType"`
 	// Duration in seconds. This is the field the pre-rewrite feed was
 	// missing itunes:duration from - it only lives here, not on the
 	// diffusion. Usually (93-100% of samples) identical across a
@@ -199,10 +210,15 @@ type rawManifestation struct {
 	// (separate encodes), so it's tied to whichever manifestation was
 	// actually selected, not diffusion-wide.
 	Duration int `json:"duration"`
-	// Principal is true for exactly one of a diffusion's ~8 sibling
-	// manifestations. Live samples show it's reliably the
-	// media.radiofrance-podcast.net (streaming) one, and reliably the one
-	// variant with no expiration date - see ExpiresAt.
+	// Principal was originally true for exactly one of a diffusion's ~8
+	// sibling manifestations, reliably the media.radiofrance-podcast.net
+	// (streaming) one, and reliably the one variant with no expiration date
+	// - see ExpiresAt. Since September 2026, that's no longer exclusive:
+	// live samples show one Principal:true manifestation per delivery-type
+	// group instead (real audio, YouTube, Dailymotion, all flagged
+	// simultaneously for the same diffusion) - see MediaType, which is what
+	// toDetails uses to filter the non-audio ones out before anything
+	// treats "principal" as unique.
 	Principal bool `json:"principal"`
 	// DownloadExpirationDate/StreamExpirationDate (Unix seconds, absent if
 	// not applicable) - the URL above can stop working after this date.
@@ -218,9 +234,10 @@ type rawManifestation struct {
 
 // toDetails converts m to the exported ManifestationDetails shape, or the
 // zero value if m has no URL (e.g. a zero-value rawManifestation from a
-// missing/empty response).
+// missing/empty response) or MediaType marks it as a video-hosting page
+// rather than real audio - see IsPlayableAudioManifestation.
 func (m rawManifestation) toDetails() ManifestationDetails {
-	if m.URL == "" {
+	if m.URL == "" || !IsPlayableAudioManifestation(m.MediaType) {
 		return ManifestationDetails{}
 	}
 	details := ManifestationDetails{
@@ -241,9 +258,9 @@ func (m rawManifestation) toDetails() ManifestationDetails {
 
 // toManifestationDetails converts raw - an Included.Manifestations map, as
 // found on diffusionsResponse and diffusionManifestationsResponse - to the
-// exported ManifestationDetails shape, dropping any entry with no URL
-// (toDetails' zero-value case, e.g. a manifestation the API listed but left
-// otherwise empty).
+// exported ManifestationDetails shape, dropping any entry with no URL or a
+// non-audio MediaType (toDetails' zero-value case, e.g. a manifestation the
+// API listed but left otherwise empty, or a video-hosting page entry).
 func toManifestationDetails(raw map[string]rawManifestation) map[string]ManifestationDetails {
 	manifestations := make(map[string]ManifestationDetails, len(raw))
 	for id, m := range raw {

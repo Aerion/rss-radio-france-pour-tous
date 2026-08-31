@@ -71,6 +71,30 @@ func TestGetDiffusionManifestations(t *testing.T) {
 	}
 }
 
+func TestGetDiffusionManifestations_FiltersVideoHostedManifestations(t *testing.T) {
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data": {"diffusions": {"id": "d1"}}, "included": {"manifestations": {
+			"video1": {"url": "https://www.dailymotion.com/video/xb2o4be", "duration": 189, "principal": true, "mediaType": "dailymotion"},
+			"video2": {"url": "https://www.youtube.com/watch?v=L4y8-kjAOp4", "duration": 189, "principal": true, "mediaType": "youtube"},
+			"audio1": {"url": "https://media.radiofrance-podcast.net/foo.m4a", "duration": 191, "principal": true, "mediaType": "mp3"}
+		}}}`))
+	})
+
+	got, err := client.GetDiffusionManifestations(context.Background(), "d1")
+	if err != nil {
+		t.Fatalf("GetDiffusionManifestations: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1 (video1/video2 are video-hosted and should be dropped)", len(got))
+	}
+	if _, ok := got["audio1"]; !ok {
+		t.Fatal("expected audio1 to survive filtering")
+	}
+	if !got["audio1"].Principal {
+		t.Error("expected audio1 to be flagged Principal")
+	}
+}
+
 func TestGetDiffusionManifestations_UpstreamError(t *testing.T) {
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)

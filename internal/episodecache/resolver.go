@@ -120,7 +120,13 @@ func (r *Resolver) observeCacheLookup(ctx context.Context, hit bool) {
 // (array position 0): live samples show non-principal manifestations carry
 // a real expiration date ~97% of the time, while the principal one never
 // does - so this is a correctness concern (dead links), not just cosmetic
-// preference. Tries, in order of cost, entirely from data already in hand:
+// preference. included/cached candidates are pre-filtered (see
+// radiofrance.rawManifestation.toDetails and findCachedPrincipal) to drop
+// video-hosting-page entries the API has, since September 2026, also been
+// flagging Principal alongside the real audio one - so "principal" here can
+// still be treated as effectively unique among what this method sees, even
+// though the API itself no longer guarantees that. Tries, in order of cost,
+// entirely from data already in hand:
 // (1) principal already present in included - free; (2) principal already
 // cached from a previous resolution - free. Only on both missing does it
 // degrade to d's default manifestation (with no known URL or duration),
@@ -237,7 +243,9 @@ func (r *Resolver) enrichRemainingCandidatesOneByOne(ctx context.Context, showID
 }
 
 // findPrincipal returns the first of candidates flagged Principal in
-// included, if any.
+// included, if any. included only ever contains entries that survived
+// radiofrance.rawManifestation.toDetails, which already excludes
+// video-hosting-page manifestations - see Resolve's doc comment.
 func findPrincipal(candidates []string, included map[string]radiofrance.ManifestationDetails) (string, radiofrance.ManifestationDetails, bool) {
 	for _, id := range candidates {
 		if m, ok := included[id]; ok && m.Principal {
@@ -262,7 +270,8 @@ func (r *Resolver) findCachedPrincipal(ctx context.Context, candidates []string,
 	}
 	for _, id := range candidates {
 		e, ok := cached[id]
-		hit := ok && e.Principal && e.DiffusionUpdatedTime == diffusionUpdatedTime && e.fresh(r.maxAge)
+		hit := ok && e.Principal && e.DiffusionUpdatedTime == diffusionUpdatedTime && e.fresh(r.maxAge) &&
+			radiofrance.IsPlayableAudioURL(e.URL)
 		r.observeCacheLookup(ctx, hit)
 		if hit {
 			return id, e, true
@@ -317,7 +326,7 @@ type audioResolution struct {
 // same value regardless of which caller wins.
 func (r *Resolver) ResolveAudioURL(ctx context.Context, manifestationID string) (url, showID, showTitle string, err error) {
 	entry, ok, getErr := r.store.Get(ctx, manifestationID)
-	hit := getErr == nil && ok && entry.fresh(r.maxAge)
+	hit := getErr == nil && ok && entry.fresh(r.maxAge) && radiofrance.IsPlayableAudioURL(entry.URL)
 	r.observeCacheLookup(ctx, hit)
 	if hit {
 		return entry.URL, entry.ShowID, entry.ShowTitle, nil

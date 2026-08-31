@@ -286,6 +286,55 @@ func TestFindCachedPrincipal_BatchesCandidatesInOneStoreRoundTrip(t *testing.T) 
 	}
 }
 
+func TestFindCachedPrincipal_SkipsBlockedHostEvenIfCachedAsPrincipal(t *testing.T) {
+	store := newFakeStore()
+	// m1 simulates a row cached before the video-manifestation filter
+	// shipped: flagged Principal by the (buggy) API response at the time,
+	// fresh, but its URL is a video-hosting page. m2 is the legitimate
+	// cached principal for the same diffusion.
+	store.entries["m1"] = Entry{
+		ManifestationID: "m1", Principal: true, DiffusionUpdatedTime: 100,
+		URL: "https://www.youtube.com/watch?v=xyz", FetchedAt: time.Now(),
+	}
+	store.entries["m2"] = Entry{
+		ManifestationID: "m2", Principal: true, DiffusionUpdatedTime: 100,
+		URL: "https://cdn.example.com/m2.mp3", FetchedAt: time.Now(),
+	}
+	r := NewResolver(store, &fakeFetcher{}, nil, newTestEnricher(), testMaxAge)
+
+	id, entry, ok := r.findCachedPrincipal(context.Background(), []string{"m1", "m2"}, 100)
+
+	if !ok || id != "m2" {
+		t.Fatalf("findCachedPrincipal = (%q, %v, %v), want (m2, _, true) - m1 is video-hosted and must be skipped", id, entry, ok)
+	}
+}
+
+func TestResolve_SkipsCachedPrincipalWithBlockedHostAndEnqueuesEnrichment(t *testing.T) {
+	store := newFakeStore()
+	// The only cached candidate is a poisoned pre-fix row - no legitimate
+	// alternative is cached or present in included.
+	store.entries["m1"] = Entry{
+		ManifestationID: "m1", Principal: true, DiffusionUpdatedTime: 100,
+		URL: "https://www.dailymotion.com/video/xyz", FetchedAt: time.Now(),
+	}
+	fetcher := &fakeFetcher{} // should not be called - the poisoned row must not short-circuit into a live fetch either
+	enricher := newTestEnricher()
+	r := NewResolver(store, fetcher, nil, enricher, testMaxAge)
+
+	d := diffusionWithManifestations("d1", 100, "m1")
+	manifestationID, url, duration, _ := r.Resolve(context.Background(), "show1", "Show One", d, nil)
+
+	if manifestationID != "m1" {
+		t.Errorf("manifestationID = %q, want m1 (d.ManifestationID() fallback)", manifestationID)
+	}
+	if url != "" || duration != 0 {
+		t.Errorf("got url=%q duration=%v, want both zero - the poisoned cache entry must not be trusted", url, duration)
+	}
+	if !enricher.isPending(manifestationKey("d1")) {
+		t.Error("expected a manifestation job to be enqueued for d1")
+	}
+}
+
 func TestResolve_CacheMissEnqueuesManifestationJobAndReturnsDegradedFallback(t *testing.T) {
 	store := newFakeStore()
 	fetcher := &fakeFetcher{} // should not be called - the whole point of the fast path
@@ -487,6 +536,34 @@ func TestResolveAudioURL_CacheHit(t *testing.T) {
 	}
 	if fetcher.calls != 0 {
 		t.Errorf("fetcher.calls = %d, want 0", fetcher.calls)
+	}
+}
+
+func TestResolveAudioURL_IgnoresCachedBlockedHostAndRefetches(t *testing.T) {
+	store := newFakeStore()
+	// Simulates a row cached before the video-manifestation filter shipped:
+	// fresh, but URL is a video-hosting page.
+	store.entries["m1"] = Entry{
+		ManifestationID: "m1", URL: "https://www.dailymotion.com/video/xyz",
+		ShowID: "show1", ShowTitle: "Show One", FetchedAt: time.Now(),
+	}
+	fetcher := &fakeFetcher{details: map[string]radiofrance.ManifestationDetails{
+		"m1": {URL: "https://cdn.example.com/real.mp3"},
+	}}
+	r := NewResolver(store, fetcher, nil, newTestEnricher(), testMaxAge)
+
+	url, showID, showTitle, err := r.ResolveAudioURL(context.Background(), "m1")
+	if err != nil {
+		t.Fatalf("ResolveAudioURL: %v", err)
+	}
+	if url != "https://cdn.example.com/real.mp3" {
+		t.Errorf("url = %q, want the freshly re-fetched URL, not the poisoned cached one", url)
+	}
+	if showID != "show1" || showTitle != "Show One" {
+		t.Errorf("got showID=%q showTitle=%q, want prior show attribution preserved", showID, showTitle)
+	}
+	if fetcher.calls != 1 {
+		t.Errorf("fetcher.calls = %d, want 1 (poisoned cache hit must not short-circuit the live fetch)", fetcher.calls)
 	}
 }
 
