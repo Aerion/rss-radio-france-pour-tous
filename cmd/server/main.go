@@ -67,7 +67,7 @@ func run() error {
 
 	showRegistry := shows.NewRegistry(pool, showRegistryBufferSize, showRegistryWorkers)
 
-	client := radiofrance.NewClient(http.DefaultClient, cfg.RadioFranceAPIToken, obs)
+	client := radiofrance.NewClient(http.DefaultClient, cfg.RadioFranceAPIToken, obs, cfg.RadioFranceRateLimit)
 
 	enricher := episodecache.NewEnricher(cfg.EnrichmentQueueSize, cfg.EnrichmentJobTimeout, obs)
 	episodeCache := episodecache.NewResolver(episodecache.NewStore(pool), client, obs, enricher, cfg.ManifestationCacheMaxAge)

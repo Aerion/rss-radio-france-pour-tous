@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 const defaultBaseURL = "https://api.radiofrance.fr/v1/"
@@ -41,12 +43,18 @@ type Client struct {
 	token      string
 	// observer is nil-able; calls are simply unrecorded if it's nil.
 	observer RequestObserver
+	// limiter is nil-able; calls go out unthrottled if it's nil (as in
+	// tests, which build a Client literal directly).
+	limiter *rate.Limiter
 }
 
 // NewClient creates a Radio France API client. httpClient may be nil, in
 // which case http.DefaultClient is used. observer may be nil to skip
-// recording call metrics.
-func NewClient(httpClient *http.Client, token string, observer RequestObserver) *Client {
+// recording call metrics. requestsPerSecond caps the outbound rate to the
+// Radio France API, with no burst allowance - applied before every call,
+// success or failure, so a run of upstream errors can't turn into a faster
+// hammering of an already-struggling API.
+func NewClient(httpClient *http.Client, token string, observer RequestObserver, requestsPerSecond float64) *Client {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -55,6 +63,7 @@ func NewClient(httpClient *http.Client, token string, observer RequestObserver) 
 		baseURL:    defaultBaseURL,
 		token:      token,
 		observer:   observer,
+		limiter:    rate.NewLimiter(rate.Limit(requestsPerSecond), 1),
 	}
 }
 
@@ -89,6 +98,12 @@ func (c *Client) doGet(ctx context.Context, endpoint, path string, out any) erro
 }
 
 func (c *Client) get(ctx context.Context, path string, out any) error {
+	if c.limiter != nil {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return fmt.Errorf("waiting for radio france API rate limiter (%s): %w", path, err)
+		}
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("building request for %s: %w", path, err)

@@ -48,6 +48,10 @@ type Config struct {
 	// EnrichmentJobTimeout bounds how long a single enrichment job's
 	// upstream call(s) may take.
 	EnrichmentJobTimeout time.Duration
+
+	// RadioFranceRateLimit caps outbound calls to the Radio France API, in
+	// requests per second, with no burst allowance.
+	RadioFranceRateLimit float64
 }
 
 // Load reads configuration from environment variables, applying defaults
@@ -97,6 +101,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	radioFranceRateLimit, err := floatEnv("RADIOFRANCE_API_RATE_LIMIT", 5)
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		Port:                     port,
@@ -109,6 +117,7 @@ func Load() (Config, error) {
 		EnrichmentQueueSize:      enrichmentQueueSize,
 		EnrichmentWorkers:        enrichmentWorkers,
 		EnrichmentJobTimeout:     enrichmentJobTimeout,
+		RadioFranceRateLimit:     radioFranceRateLimit,
 	}, nil
 }
 
@@ -137,4 +146,17 @@ func intEnv(name string, def int) (int, error) {
 		return 0, fmt.Errorf("%s: invalid integer %q: %w", name, raw, err)
 	}
 	return n, nil
+}
+
+// floatEnv reads name as a float64, returning def if the variable is unset.
+func floatEnv(name string, def float64) (float64, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return def, nil
+	}
+	f, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s: invalid number %q: %w", name, raw, err)
+	}
+	return f, nil
 }
