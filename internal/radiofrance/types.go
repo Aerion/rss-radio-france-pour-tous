@@ -23,7 +23,10 @@
 // here since it wasn't hit in practice by the current fixtures/tests.
 package radiofrance
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Visual is a cover-image variant as returned by the Radio France API.
 // Observed Name values: "square_banner", "square_visual", "background",
@@ -281,31 +284,85 @@ type ManifestationDetails struct {
 	ExpiresAt *time.Time
 }
 
-// searchResponse is the raw shape of GET stations/search.
-type searchResponse struct {
-	Data []struct {
-		ResultItems struct {
-			// Model discriminates what this result is; only "show" results
-			// are usable here; "diffusion" results carry no show
-			// relationship in the response at all, so this client skips
-			// them rather than issuing follow-up calls to resolve one.
-			Model         string `json:"model"`
-			Relationships struct {
-				Show []string `json:"show"`
-			} `json:"relationships"`
-		} `json:"resultItems"`
-	} `json:"data"`
-	Included struct {
-		Shows map[string]Show `json:"shows"`
-	} `json:"included"`
+// sapikSearchResponse is the subset of the SAPIK layout/search response
+// this client reads. The full response is a server-driven-UI tree: a list
+// of sections ("highlights"), each holding cards, each card carrying the
+// action the app would fire when it is tapped. Everything needed here -
+// what the card is, what it opens - lives on that action.
+type sapikSearchResponse struct {
+	Highlights []struct {
+		Items []struct {
+			Widget struct {
+				Image struct {
+					// ID is a visual UUID, in the same namespace the v1
+					// API uses, so buildImageURL accepts it as-is.
+					ID string `json:"id"`
+				} `json:"image"`
+				Titles sapikTitles `json:"titles"`
+				Action struct {
+					Type string `json:"type"`
+					// ID is the concept (show) UUID for a podcast card -
+					// again the same id the v1 API uses.
+					ID string `json:"id"`
+					// Shimmer names the placeholder screen shown while
+					// the target loads, which is how the app tells a
+					// podcast ("concept") from an episode ("expression")
+					// or a personality.
+					Shimmer struct {
+						ID string `json:"id"`
+					} `json:"shimmer"`
+				} `json:"action"`
+			} `json:"widget"`
+		} `json:"items"`
+	} `json:"highlights"`
 }
 
-// SearchResult is a show matched by a search query.
+// sapikTitles is a card's title block. SAPIK sends the same text twice:
+// once as a plain string, once as a styled object - see sapikText.
+type sapikTitles struct {
+	Title     string    `json:"title"`
+	TitleText sapikText `json:"titleText"`
+}
+
+// text returns the card's title, preferring the plain string and falling
+// back to the styled variant.
+func (t sapikTitles) text() string {
+	if t.Title != "" {
+		return t.Title
+	}
+	return t.TitleText.Label
+}
+
+// sapikText is a string that SAPIK sends either bare or wrapped in a
+// styling object ({"style": ..., "label": ...}), depending on the card and
+// the platform segment. Both decode to Label.
+type sapikText struct {
+	Label string
+}
+
+func (t *sapikText) UnmarshalJSON(data []byte) error {
+	var bare string
+	if err := json.Unmarshal(data, &bare); err == nil {
+		t.Label = bare
+		return nil
+	}
+	var wrapped struct {
+		Label string `json:"label"`
+	}
+	if err := json.Unmarshal(data, &wrapped); err != nil {
+		return err
+	}
+	t.Label = wrapped.Label
+	return nil
+}
+
+// SearchResult is a show matched by a search query. Unlike the v1 API's
+// search, SAPIK's returns no description or radiofrance.fr page URL for a
+// result - only what its card displays - and fetching those would cost one
+// extra API call per result.
 type SearchResult struct {
-	ShowID     string
-	Title      string
-	Path       string
-	Standfirst string
+	ShowID string
+	Title  string
 	// ImgURL is "" when the show has no usable cover image.
 	ImgURL string
 }

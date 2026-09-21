@@ -115,7 +115,7 @@ func TestHandleRequest_RSSFeed_UpstreamError(t *testing.T) {
 
 func TestHandleRequest_Search(t *testing.T) {
 	api := &fakeAPI{searchResults: []radiofrance.SearchResult{
-		{ShowID: "0b91efaf", Title: "Affaires sensibles", Path: "https://radiofrance.fr/affaires-sensibles"},
+		{ShowID: "0b91efaf", Title: "Affaires sensibles", ImgURL: "https://api.radiofrance.fr/v1/services/embed/image/7b50cf5f?preset=568x568"},
 	}}
 	h := newTestServer(t, api, &fakeAudioResolver{})
 	rec := httptest.NewRecorder()

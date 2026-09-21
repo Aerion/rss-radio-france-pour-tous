@@ -1,0 +1,756 @@
+{
+ "type": "default",
+ "canPullToRefresh": true,
+ "title": "Résultats de recherche pour affaires sensibles",
+ "header": null,
+ "id": "search-affaires sensibles",
+ "highlights": [
+  {
+   "header": null,
+   "footer": null,
+   "decoration": {
+    "type": "default"
+   },
+   "hasSnapScale": null,
+   "itemHeight": null,
+   "size": "m",
+   "rows": 1,
+   "items": [
+    {
+     "type": "dropZone",
+     "widget": {
+      "type": "leadingAndTrailing",
+      "widget": {
+       "leading": [
+        {
+         "type": "text",
+         "widget": {
+          "label": "6 résultats",
+          "style": "textMedium"
+         }
+        }
+       ],
+       "trailing": [
+        {
+         "type": "button",
+         "widget": {
+          "type": "textLeadingIcon",
+          "text": "Modifier",
+          "style": "filled",
+          "assetId": "ic_adjustments_horizontal",
+          "action": {
+           "type": "openFilterSheet",
+           "accessibility": "Modifier",
+           "widget": {
+            "type": "bottomSheet",
+            "widget": {
+             "coverModal": {
+              "titles": {
+               "alignment": "center",
+               "title": "Filtrer",
+               "subtitle": "parmi les résultats \"affaires sensibles\""
+              },
+              "image": null
+             },
+             "highlights": [
+              {
+               "header": {
+                "title": "Chaînes",
+                "subtitle": null,
+                "button": null
+               },
+               "footer": null,
+               "decoration": {
+                "type": "default"
+               },
+               "hasSnapScale": null,
+               "itemHeight": null,
+               "size": "freestyle",
+               "rows": 1,
+               "items": [
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "Radio France",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "RADIOFRANCE"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "France Inter",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "FRANCEINTER"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "franceinfo",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "FRANCEINFO"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "France Culture",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "FRANCECULTURE"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "ICI",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "FRANCEBLEU"
+                   }
+                  }
+                 }
+                }
+               ],
+               "format": "mosaic"
+              },
+              {
+               "header": {
+                "title": "Types de contenus",
+                "subtitle": null,
+                "button": null
+               },
+               "footer": null,
+               "decoration": {
+                "type": "default"
+               },
+               "hasSnapScale": null,
+               "itemHeight": null,
+               "size": "freestyle",
+               "rows": 1,
+               "items": [
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "Podcasts",
+                  "style": "inverse",
+                  "selectState": "selected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "remove",
+                   "params": {
+                    "entities": "CONCEPTS"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "Épisodes",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "entities": "EXPRESSIONS_ARTICLES"
+                   }
+                  }
+                 }
+                }
+               ],
+               "format": "mosaic"
+              },
+              {
+               "header": {
+                "title": "Durées des épisodes",
+                "subtitle": null,
+                "button": null
+               },
+               "footer": null,
+               "decoration": {
+                "type": "default"
+               },
+               "hasSnapScale": null,
+               "itemHeight": null,
+               "size": "freestyle",
+               "rows": 1,
+               "items": [
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "< 5 min",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "duration": "UNDER_5_MINUTES"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "5 min-20 min",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "duration": "BETWEEN_5_AND_20_MINUTES"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "20 min-1h",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "duration": "BETWEEN_20_AND_60_MINUTES"
+                   }
+                  }
+                 }
+                }
+               ],
+               "format": "mosaic"
+              },
+              {
+               "header": {
+                "title": "Années",
+                "subtitle": null,
+                "button": null
+               },
+               "footer": null,
+               "decoration": {
+                "type": "default"
+               },
+               "hasSnapScale": null,
+               "itemHeight": null,
+               "size": "freestyle",
+               "rows": 1,
+               "items": [
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": " ≤ 2016",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "older"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2018",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2018"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2019",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2019"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2020",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2020"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2021",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2021"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2022",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2022"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2023",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2023"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2024",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2024"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2025",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2025"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2026",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2026"
+                   }
+                  }
+                 }
+                }
+               ],
+               "format": "mosaic"
+              }
+             ],
+             "buttonTray": {
+              "buttons": [
+               {
+                "type": "text",
+                "text": "Valider",
+                "style": "filled",
+                "action": {
+                 "type": "submitDeferredActions"
+                }
+               }
+              ],
+              "filled": true,
+              "orientation": "vertical"
+             }
+            }
+           }
+          }
+         }
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "isSticky": true,
+   "format": "list"
+  },
+  {
+   "header": null,
+   "footer": null,
+   "decoration": {
+    "type": "default"
+   },
+   "hasSnapScale": null,
+   "itemHeight": null,
+   "size": "freestyle",
+   "rows": 1,
+   "items": [
+    {
+     "type": "button",
+     "widget": {
+      "type": "textTrailingIcon",
+      "text": "Podcasts",
+      "assetId": "ic_cross_circle_filled",
+      "style": "transparent",
+      "action": {
+       "type": "filter",
+       "id": "search",
+       "policy": "remove",
+       "params": {
+        "entities": "CONCEPTS"
+       }
+      }
+     }
+    }
+   ],
+   "format": "mosaic",
+   "isSticky": true
+  },
+  {
+   "header": {
+    "title": "Podcasts",
+    "subtitle": null,
+    "button": null
+   },
+   "footer": null,
+   "decoration": {
+    "type": "default"
+   },
+   "hasSnapScale": null,
+   "itemHeight": null,
+   "size": "m",
+   "rows": 1,
+   "items": [
+    {
+     "type": "cardSide",
+     "widget": {
+      "image": {
+       "id": "7b50cf5f-f5bd-4dc4-8b1d-b08666768dcf",
+       "type": "rectangle",
+       "imageRatio": "square",
+       "ratio": {
+        "value": "square",
+        "mode": "default"
+       },
+       "sizeMode": "default"
+      },
+      "additionalInfo": null,
+      "action": {
+       "id": "0b91efaf-26e6-11e4-907f-782bcb6744eb",
+       "type": "openLayout",
+       "shimmer": {
+        "id": "concept"
+       },
+       "accessibility": "ouvrir la page détaillée"
+      },
+      "size": "l",
+      "background": null,
+      "dropZoneDefault": null,
+      "topInfo": null,
+      "titles": {
+       "style": "row",
+       "dropZoneMini": {
+        "type": "button",
+        "widget": {
+         "action": {
+          "id": "0b91efaf-26e6-11e4-907f-782bcb6744eb",
+          "type": "follow",
+          "params": {
+           "actionType": "%@actionType%@",
+           "model": "CONCEPT",
+           "modelId": "0b91efaf-26e6-11e4-907f-782bcb6744eb",
+           "brand": "FRANCEINTER"
+          }
+         },
+         "id": "0b91efaf-26e6-11e4-907f-782bcb6744eb",
+         "style": "blanked",
+         "type": "followIcon"
+        }
+       },
+       "size": null,
+       "subtitle": null,
+       "title": "Affaires sensibles",
+       "titleText": {
+        "style": "titleMedium",
+        "label": "Affaires sensibles"
+       }
+      },
+      "border": null,
+      "info": null,
+      "iconId": null,
+      "isSelectable": null,
+      "padding": {
+       "mode": "default"
+      }
+     }
+    },
+    {
+     "type": "cardSide",
+     "widget": {
+      "image": {
+       "id": "d2bf6215-9d48-410a-ad93-96a1a9ee1b95",
+       "type": "rectangle",
+       "imageRatio": "square",
+       "ratio": {
+        "value": "square",
+        "mode": "default"
+       },
+       "sizeMode": "default"
+      },
+      "additionalInfo": null,
+      "action": {
+       "id": "2df08f03-60a2-4139-ae24-8b97494ff441",
+       "type": "openLayout",
+       "shimmer": {
+        "id": "concept"
+       },
+       "accessibility": "ouvrir la page détaillée"
+      },
+      "size": "l",
+      "background": null,
+      "dropZoneDefault": null,
+      "topInfo": null,
+      "titles": {
+       "style": "row",
+       "dropZoneMini": {
+        "type": "button",
+        "widget": {
+         "action": {
+          "id": "2df08f03-60a2-4139-ae24-8b97494ff441",
+          "type": "follow",
+          "params": {
+           "actionType": "%@actionType%@",
+           "model": "CONCEPT",
+           "modelId": "2df08f03-60a2-4139-ae24-8b97494ff441",
+           "brand": "FRANCEINTER"
+          }
+         },
+         "id": "2df08f03-60a2-4139-ae24-8b97494ff441",
+         "style": "blanked",
+         "type": "followIcon"
+        }
+       },
+       "size": null,
+       "subtitle": null,
+       "title": "Les années 1980 racontées par \"Affaires sensibles\"",
+       "titleText": {
+        "style": "titleMedium",
+        "label": "Les années 1980 racontées par \"Affaires sensibles\""
+       }
+      },
+      "border": null,
+      "info": null,
+      "iconId": null,
+      "isSelectable": null,
+      "padding": {
+       "mode": "default"
+      }
+     }
+    },
+    {
+     "type": "cardSide",
+     "widget": {
+      "image": {
+       "id": "b0d39537-655d-4d9a-afab-66d2cb359095",
+       "type": "rectangle",
+       "imageRatio": "square",
+       "ratio": {
+        "value": "square",
+        "mode": "default"
+       },
+       "sizeMode": "default"
+      },
+      "additionalInfo": null,
+      "action": {
+       "id": "2b4c34b1-3b6c-4e1b-98f2-31e011662549",
+       "type": "openLayout",
+       "shimmer": {
+        "id": "concept"
+       },
+       "accessibility": "ouvrir la page détaillée"
+      },
+      "size": "l",
+      "background": null,
+      "dropZoneDefault": null,
+      "topInfo": null,
+      "titles": {
+       "style": "row",
+       "dropZoneMini": {
+        "type": "button",
+        "widget": {
+         "action": {
+          "id": "2b4c34b1-3b6c-4e1b-98f2-31e011662549",
+          "type": "follow",
+          "params": {
+           "actionType": "%@actionType%@",
+           "model": "CONCEPT",
+           "modelId": "2b4c34b1-3b6c-4e1b-98f2-31e011662549",
+           "brand": "FRANCEINTER"
+          }
+         },
+         "id": "2b4c34b1-3b6c-4e1b-98f2-31e011662549",
+         "style": "blanked",
+         "type": "followIcon"
+        }
+       },
+       "size": null,
+       "subtitle": null,
+       "title": "Le heavy metal, affaires sensibles ",
+       "titleText": {
+        "style": "titleMedium",
+        "label": "Le heavy metal, affaires sensibles "
+       }
+      },
+      "border": null,
+      "info": null,
+      "iconId": null,
+      "isSelectable": null,
+      "padding": {
+       "mode": "default"
+      }
+     }
+    }
+   ],
+   "format": "list"
+  }
+ ]
+}

@@ -26,11 +26,9 @@ func (s *Server) handleRobots(w http.ResponseWriter, r *http.Request) error {
 // searchResultJSON is the shape expected by the homepage's client-side
 // search UI (internal/httpapi/web/index.html).
 type searchResultJSON struct {
-	Title      string `json:"title"`
-	Path       string `json:"path"`
-	Standfirst string `json:"standfirst"`
-	ImgURL     string `json:"imgUrl"`
-	RSSURL     string `json:"rssUrl"`
+	Title  string `json:"title"`
+	ImgURL string `json:"imgUrl"`
+	RSSURL string `json:"rssUrl"`
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
@@ -48,11 +46,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) error {
 	out := make([]searchResultJSON, len(results))
 	for i, res := range results {
 		out[i] = searchResultJSON{
-			Title:      res.Title,
-			Path:       res.Path,
-			Standfirst: res.Standfirst,
-			ImgURL:     res.ImgURL,
-			RSSURL:     s.publicBaseURL + "/rss/" + res.ShowID,
+			Title:  res.Title,
+			ImgURL: res.ImgURL,
+			RSSURL: s.publicBaseURL + "/rss/" + res.ShowID,
 		}
 	}
 

@@ -25,9 +25,10 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Cleanup(server.Close)
 
 	return &Client{
-		httpClient: server.Client(),
-		baseURL:    server.URL + "/",
-		token:      "test-token",
+		httpClient:   server.Client(),
+		baseURL:      server.URL + "/",
+		sapikBaseURL: server.URL + "/",
+		token:        "test-token",
 	}
 }
 

@@ -1,0 +1,1473 @@
+{
+ "type": "default",
+ "canPullToRefresh": true,
+ "title": "Résultats de recherche pour affaires sensibles",
+ "header": null,
+ "id": "search-affaires sensibles",
+ "highlights": [
+  {
+   "header": null,
+   "footer": null,
+   "decoration": {
+    "type": "default"
+   },
+   "hasSnapScale": null,
+   "itemHeight": null,
+   "size": "m",
+   "rows": 1,
+   "items": [
+    {
+     "type": "dropZone",
+     "widget": {
+      "type": "leadingAndTrailing",
+      "widget": {
+       "leading": [
+        {
+         "type": "text",
+         "widget": {
+          "label": "26 résultats",
+          "style": "textMedium"
+         }
+        }
+       ],
+       "trailing": [
+        {
+         "type": "button",
+         "widget": {
+          "type": "textLeadingIcon",
+          "text": "Filtrer",
+          "style": "inverse",
+          "assetId": "ic_adjustments_horizontal",
+          "action": {
+           "type": "openFilterSheet",
+           "accessibility": "Filtrer",
+           "widget": {
+            "type": "bottomSheet",
+            "widget": {
+             "coverModal": {
+              "titles": {
+               "alignment": "center",
+               "title": "Filtrer",
+               "subtitle": "parmi les résultats \"affaires sensibles\""
+              },
+              "image": null
+             },
+             "highlights": [
+              {
+               "header": {
+                "title": "Chaînes",
+                "subtitle": null,
+                "button": null
+               },
+               "footer": null,
+               "decoration": {
+                "type": "default"
+               },
+               "hasSnapScale": null,
+               "itemHeight": null,
+               "size": "freestyle",
+               "rows": 1,
+               "items": [
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "Radio France",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "RADIOFRANCE"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "France Inter",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "FRANCEINTER"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "franceinfo",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "FRANCEINFO"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "France Culture",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "FRANCECULTURE"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "ICI",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "brand": "FRANCEBLEU"
+                   }
+                  }
+                 }
+                }
+               ],
+               "format": "mosaic"
+              },
+              {
+               "header": {
+                "title": "Types de contenus",
+                "subtitle": null,
+                "button": null
+               },
+               "footer": null,
+               "decoration": {
+                "type": "default"
+               },
+               "hasSnapScale": null,
+               "itemHeight": null,
+               "size": "freestyle",
+               "rows": 1,
+               "items": [
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "Podcasts",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "entities": "CONCEPTS"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "Épisodes",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "entities": "EXPRESSIONS_ARTICLES"
+                   }
+                  }
+                 }
+                }
+               ],
+               "format": "mosaic"
+              },
+              {
+               "header": {
+                "title": "Durées des épisodes",
+                "subtitle": null,
+                "button": null
+               },
+               "footer": null,
+               "decoration": {
+                "type": "default"
+               },
+               "hasSnapScale": null,
+               "itemHeight": null,
+               "size": "freestyle",
+               "rows": 1,
+               "items": [
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "< 5 min",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "duration": "UNDER_5_MINUTES"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "5 min-20 min",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "duration": "BETWEEN_5_AND_20_MINUTES"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "20 min-1h",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "duration": "BETWEEN_20_AND_60_MINUTES"
+                   }
+                  }
+                 }
+                }
+               ],
+               "format": "mosaic"
+              },
+              {
+               "header": {
+                "title": "Années",
+                "subtitle": null,
+                "button": null
+               },
+               "footer": null,
+               "decoration": {
+                "type": "default"
+               },
+               "hasSnapScale": null,
+               "itemHeight": null,
+               "size": "freestyle",
+               "rows": 1,
+               "items": [
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": " ≤ 2016",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "older"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2018",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2018"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2019",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2019"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2020",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2020"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2021",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2021"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2022",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2022"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2023",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2023"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2024",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2024"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2025",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2025"
+                   }
+                  }
+                 }
+                },
+                {
+                 "type": "button",
+                 "widget": {
+                  "type": "text",
+                  "text": "2026",
+                  "style": "inverse",
+                  "selectState": "unselected",
+                  "action": {
+                   "type": "filter",
+                   "id": "search",
+                   "deferred": true,
+                   "policy": "add",
+                   "params": {
+                    "year": "2026"
+                   }
+                  }
+                 }
+                }
+               ],
+               "format": "mosaic"
+              }
+             ],
+             "buttonTray": {
+              "buttons": [
+               {
+                "type": "text",
+                "text": "Valider",
+                "style": "filled",
+                "action": {
+                 "type": "submitDeferredActions"
+                }
+               }
+              ],
+              "filled": true,
+              "orientation": "vertical"
+             }
+            }
+           }
+          }
+         }
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "isSticky": true,
+   "format": "list"
+  },
+  {
+   "header": {
+    "title": "Podcasts",
+    "subtitle": null,
+    "button": null
+   },
+   "footer": null,
+   "decoration": {
+    "type": "default"
+   },
+   "hasSnapScale": null,
+   "itemHeight": null,
+   "size": "m",
+   "rows": 1,
+   "items": [
+    {
+     "type": "cardSide",
+     "widget": {
+      "image": {
+       "id": "7b50cf5f-f5bd-4dc4-8b1d-b08666768dcf",
+       "type": "rectangle",
+       "imageRatio": "square",
+       "ratio": {
+        "value": "square",
+        "mode": "default"
+       },
+       "sizeMode": "default"
+      },
+      "additionalInfo": null,
+      "action": {
+       "id": "0b91efaf-26e6-11e4-907f-782bcb6744eb",
+       "type": "openLayout",
+       "shimmer": {
+        "id": "concept"
+       },
+       "accessibility": "ouvrir la page détaillée"
+      },
+      "size": "l",
+      "background": null,
+      "dropZoneDefault": null,
+      "topInfo": null,
+      "titles": {
+       "style": "row",
+       "dropZoneMini": {
+        "type": "button",
+        "widget": {
+         "action": {
+          "id": "0b91efaf-26e6-11e4-907f-782bcb6744eb",
+          "type": "follow",
+          "params": {
+           "actionType": "%@actionType%@",
+           "model": "CONCEPT",
+           "modelId": "0b91efaf-26e6-11e4-907f-782bcb6744eb",
+           "brand": "FRANCEINTER"
+          }
+         },
+         "id": "0b91efaf-26e6-11e4-907f-782bcb6744eb",
+         "style": "blanked",
+         "type": "followIcon"
+        }
+       },
+       "size": null,
+       "subtitle": null,
+       "title": "Affaires sensibles",
+       "titleText": {
+        "style": "titleMedium",
+        "label": "Affaires sensibles"
+       }
+      },
+      "border": null,
+      "info": null,
+      "iconId": null,
+      "isSelectable": null,
+      "padding": {
+       "mode": "default"
+      }
+     }
+    },
+    {
+     "type": "cardSide",
+     "widget": {
+      "image": {
+       "id": "d2bf6215-9d48-410a-ad93-96a1a9ee1b95",
+       "type": "rectangle",
+       "imageRatio": "square",
+       "ratio": {
+        "value": "square",
+        "mode": "default"
+       },
+       "sizeMode": "default"
+      },
+      "additionalInfo": null,
+      "action": {
+       "id": "2df08f03-60a2-4139-ae24-8b97494ff441",
+       "type": "openLayout",
+       "shimmer": {
+        "id": "concept"
+       },
+       "accessibility": "ouvrir la page détaillée"
+      },
+      "size": "l",
+      "background": null,
+      "dropZoneDefault": null,
+      "topInfo": null,
+      "titles": {
+       "style": "row",
+       "dropZoneMini": {
+        "type": "button",
+        "widget": {
+         "action": {
+          "id": "2df08f03-60a2-4139-ae24-8b97494ff441",
+          "type": "follow",
+          "params": {
+           "actionType": "%@actionType%@",
+           "model": "CONCEPT",
+           "modelId": "2df08f03-60a2-4139-ae24-8b97494ff441",
+           "brand": "FRANCEINTER"
+          }
+         },
+         "id": "2df08f03-60a2-4139-ae24-8b97494ff441",
+         "style": "blanked",
+         "type": "followIcon"
+        }
+       },
+       "size": null,
+       "subtitle": null,
+       "title": "Les années 1980 racontées par \"Affaires sensibles\"",
+       "titleText": {
+        "style": "titleMedium",
+        "label": "Les années 1980 racontées par \"Affaires sensibles\""
+       }
+      },
+      "border": null,
+      "info": null,
+      "iconId": null,
+      "isSelectable": null,
+      "padding": {
+       "mode": "default"
+      }
+     }
+    }
+   ],
+   "format": "list"
+  },
+  {
+   "header": {
+    "title": "Épisodes",
+    "subtitle": null,
+    "button": null
+   },
+   "footer": null,
+   "decoration": {
+    "type": "default"
+   },
+   "hasSnapScale": null,
+   "itemHeight": null,
+   "size": "l",
+   "rows": 1,
+   "items": [
+    {
+     "type": "cardSide",
+     "metadata": {
+      "playlist": {
+       "aodId": "1007f518-4080-41e7-9036-c5a0c9f0b1a0"
+      },
+      "playlistItem": {
+       "type": "aod",
+       "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0"
+      }
+     },
+     "widget": {
+      "image": {
+       "id": "7b50cf5f-f5bd-4dc4-8b1d-b08666768dcf",
+       "type": "rectangle",
+       "imageRatio": "square",
+       "ratio": {
+        "value": "square",
+        "mode": "default"
+       },
+       "sizeMode": "default"
+      },
+      "additionalInfo": [
+       {
+        "label": "Vendredi 4 septembre 2026",
+        "style": "textSmall"
+       }
+      ],
+      "action": {
+       "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+       "type": "openLayout",
+       "shimmer": {
+        "id": "expression"
+       },
+       "accessibility": "ouvrir la page"
+      },
+      "size": null,
+      "background": null,
+      "dropZoneDefault": {
+       "type": "leadingAndTrailing",
+       "widget": {
+        "leading": [
+         {
+          "type": "button",
+          "widget": {
+           "type": "downloadIcon",
+           "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+           "style": "blanked",
+           "action": {
+            "type": "download",
+            "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+            "accessibility": "Télécharger l'épisode \"L’affaire Christiane K ou le quintuple infanticide\""
+           },
+           "isEnabled": true
+          }
+         },
+         {
+          "type": "button",
+          "widget": {
+           "type": "bookmarkIcon",
+           "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+           "style": "blanked",
+           "action": {
+            "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+            "type": "bookmark",
+            "params": {
+             "actionType": "%@actionType%@",
+             "model": "EXPRESSION",
+             "modelId": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+             "brand": "FRANCEINTER"
+            }
+           }
+          }
+         },
+         {
+          "type": "button",
+          "widget": {
+           "type": "bookmarkPlaylistIcon",
+           "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+           "style": "blanked",
+           "action": {
+            "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+            "type": "openPlaylistBottomSheet",
+            "coverModal": {
+             "titles": {
+              "title": "L’affaire Christiane K ou le quintuple infanticide",
+              "subtitle": "Affaires sensibles",
+              "alignment": "leading"
+             },
+             "image": {
+              "id": "3f1760f8-f00b-49fd-b0f8-06899a2b5dd9",
+              "imageRatio": "square",
+              "ratio": {
+               "value": "square",
+               "mode": "default"
+              },
+              "sizeMode": "default",
+              "type": "rectangle"
+             }
+            },
+            "params": {
+             "actionType": "%@actionType%@",
+             "model": "EXPRESSION",
+             "modelId": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+             "brand": "FRANCEINTER"
+            }
+           }
+          }
+         },
+         {
+          "type": "button",
+          "widget": {
+           "type": "icon",
+           "assetId": "ic_threedot",
+           "style": "blanked",
+           "action": {
+            "type": "openSheet",
+            "widget": {
+             "type": "bottomSheet",
+             "widget": {
+              "coverModal": {
+               "titles": {
+                "title": "L’affaire Christiane K ou le quintuple infanticide",
+                "alignment": "leading",
+                "subtitle": "Affaires sensibles"
+               },
+               "image": {
+                "id": "7b50cf5f-f5bd-4dc4-8b1d-b08666768dcf",
+                "imageRatio": "square",
+                "ratio": {
+                 "value": "square",
+                 "mode": "default"
+                },
+                "sizeMode": "default",
+                "type": "rectangle"
+               }
+              },
+              "highlights": [
+               {
+                "header": null,
+                "footer": null,
+                "decoration": {
+                 "type": "block",
+                 "separatorType": "default"
+                },
+                "hasSnapScale": null,
+                "itemHeight": null,
+                "size": "m",
+                "rows": 1,
+                "items": [
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "type": "download",
+                    "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0"
+                   },
+                   "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                   "type": "download"
+                  }
+                 },
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                    "type": "bookmark",
+                    "params": {
+                     "actionType": "%@actionType%@",
+                     "model": "EXPRESSION",
+                     "modelId": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                     "brand": "FRANCEINTER"
+                    }
+                   },
+                   "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                   "type": "bookmark"
+                  }
+                 },
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                    "type": "openPlaylistBottomSheet",
+                    "coverModal": {
+                     "titles": {
+                      "title": "L’affaire Christiane K ou le quintuple infanticide",
+                      "subtitle": "Affaires sensibles",
+                      "alignment": "leading"
+                     },
+                     "image": {
+                      "id": "3f1760f8-f00b-49fd-b0f8-06899a2b5dd9",
+                      "imageRatio": "square",
+                      "ratio": {
+                       "value": "square",
+                       "mode": "default"
+                      },
+                      "sizeMode": "default",
+                      "type": "rectangle"
+                     }
+                    },
+                    "params": {
+                     "actionType": "%@actionType%@",
+                     "model": "EXPRESSION",
+                     "modelId": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                     "brand": "FRANCEINTER"
+                    }
+                   },
+                   "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                   "type": "openPlaylistBottomSheet"
+                  }
+                 },
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "type": "queue",
+                    "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0"
+                   },
+                   "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                   "type": "queue"
+                  }
+                 },
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "type": "readUnread",
+                    "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                    "duration": 2888
+                   },
+                   "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                   "type": "readUnread",
+                   "duration": 2888
+                  }
+                 },
+                 {
+                  "type": "cardSide",
+                  "widget": {
+                   "image": null,
+                   "additionalInfo": null,
+                   "action": {
+                    "type": "share",
+                    "id": "https://www.radiofrance.fr/franceinter/podcasts/affaires-sensibles/affaires-sensibles-du-lundi-29-septembre-2025-6978777",
+                    "accessibility": "Partager cet épisode"
+                   },
+                   "size": null,
+                   "background": null,
+                   "dropZoneDefault": null,
+                   "topInfo": null,
+                   "titles": {
+                    "style": "row",
+                    "dropZoneMini": null,
+                    "size": null,
+                    "subtitle": null,
+                    "title": "Partager",
+                    "titleText": {
+                     "style": "titleMedium",
+                     "label": "Partager"
+                    }
+                   },
+                   "border": null,
+                   "info": null,
+                   "iconId": "ic_share_stroked",
+                   "isSelectable": null,
+                   "padding": {
+                    "mode": "default"
+                   },
+                   "accessibility": {
+                    "label": "Partager",
+                    "placeholders": []
+                   }
+                  }
+                 },
+                 {
+                  "type": "cardSide",
+                  "widget": {
+                   "image": null,
+                   "additionalInfo": null,
+                   "action": {
+                    "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+                    "type": "openLayout",
+                    "accessibility": "Voir la page de l'épisode",
+                    "shimmer": {
+                     "id": "expression"
+                    }
+                   },
+                   "size": null,
+                   "background": null,
+                   "dropZoneDefault": null,
+                   "topInfo": null,
+                   "titles": {
+                    "style": "row",
+                    "dropZoneMini": null,
+                    "size": null,
+                    "subtitle": null,
+                    "title": "Voir la page de l'épisode",
+                    "titleText": {
+                     "style": "titleMedium",
+                     "label": "Voir la page de l'épisode"
+                    }
+                   },
+                   "border": null,
+                   "info": null,
+                   "iconId": "ic_document_stroked",
+                   "isSelectable": null,
+                   "padding": {
+                    "mode": "default"
+                   }
+                  }
+                 }
+                ],
+                "format": "list"
+               }
+              ],
+              "buttonTray": {
+               "orientation": "vertical",
+               "filled": true,
+               "buttons": [
+                {
+                 "type": "text",
+                 "text": "Fermer",
+                 "style": "blanked",
+                 "action": {
+                  "type": "dismiss"
+                 }
+                }
+               ]
+              }
+             }
+            },
+            "accessibility": "plus d'actions"
+           }
+          }
+         }
+        ],
+        "trailing": [
+         {
+          "type": "dynamicPlayAndDuration",
+          "widget": {
+           "progress": {
+            "type": "aod",
+            "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+            "duration": 2888,
+            "accessibility": "48 min"
+           },
+           "button": {
+            "type": "playIcon",
+            "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+            "style": "filled",
+            "action": {
+             "id": "1007f518-4080-41e7-9036-c5a0c9f0b1a0",
+             "type": "playAod",
+             "playlist": null
+            }
+           }
+          }
+         }
+        ]
+       }
+      },
+      "topInfo": null,
+      "titles": {
+       "style": "row",
+       "dropZoneMini": null,
+       "size": null,
+       "subtitle": "Affaires sensibles",
+       "title": "L’affaire Christiane K ou le quintuple infanticide",
+       "titleText": {
+        "style": "titleMedium",
+        "label": "L’affaire Christiane K ou le quintuple infanticide"
+       },
+       "subtitleText": {
+        "style": "textSmall",
+        "label": "Affaires sensibles"
+       }
+      },
+      "border": null,
+      "info": null,
+      "iconId": null,
+      "isSelectable": null,
+      "padding": {
+       "mode": "default"
+      },
+      "accessibility": {
+       "label": "L’affaire Christiane K ou le quintuple infanticide, Affaires sensibles, Vendredi 4 septembre 2026, %@",
+       "placeholders": [
+        {
+         "type": "duration",
+         "duration": 2888,
+         "expressionId": "1007f518-4080-41e7-9036-c5a0c9f0b1a0"
+        }
+       ]
+      },
+      "tagId": "episodeDate04092026"
+     }
+    },
+    {
+     "type": "cardSide",
+     "metadata": {
+      "playlist": {
+       "aodId": "cb5a387e-61af-49b8-8361-d05af4d70923"
+      },
+      "playlistItem": {
+       "type": "aod",
+       "id": "cb5a387e-61af-49b8-8361-d05af4d70923"
+      }
+     },
+     "widget": {
+      "image": {
+       "id": "17e73e02-074e-4372-9e52-3ac5fac147e4",
+       "type": "rectangle",
+       "imageRatio": "square",
+       "ratio": {
+        "value": "square",
+        "mode": "default"
+       },
+       "sizeMode": "default"
+      },
+      "additionalInfo": [
+       {
+        "label": "Jeudi 10 septembre 2026",
+        "style": "textSmall"
+       }
+      ],
+      "action": {
+       "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+       "type": "openLayout",
+       "shimmer": {
+        "id": "expression"
+       },
+       "accessibility": "ouvrir la page"
+      },
+      "size": null,
+      "background": null,
+      "dropZoneDefault": {
+       "type": "leadingAndTrailing",
+       "widget": {
+        "leading": [
+         {
+          "type": "button",
+          "widget": {
+           "type": "downloadIcon",
+           "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+           "style": "blanked",
+           "action": {
+            "type": "download",
+            "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+            "accessibility": "Télécharger l'épisode \"Daniel Morin en liberté : Fabrice Drouelle, Monsieur Affaires sensibles\""
+           },
+           "isEnabled": true
+          }
+         },
+         {
+          "type": "button",
+          "widget": {
+           "type": "bookmarkIcon",
+           "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+           "style": "blanked",
+           "action": {
+            "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+            "type": "bookmark",
+            "params": {
+             "actionType": "%@actionType%@",
+             "model": "EXPRESSION",
+             "modelId": "cb5a387e-61af-49b8-8361-d05af4d70923",
+             "brand": "FRANCEINTER"
+            }
+           }
+          }
+         },
+         {
+          "type": "button",
+          "widget": {
+           "type": "bookmarkPlaylistIcon",
+           "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+           "style": "blanked",
+           "action": {
+            "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+            "type": "openPlaylistBottomSheet",
+            "coverModal": {
+             "titles": {
+              "title": "Daniel Morin en liberté : Fabrice Drouelle, Monsieur Affaires sensibles",
+              "subtitle": "Daniel Morin en liberté",
+              "alignment": "leading"
+             },
+             "image": {
+              "id": "17e73e02-074e-4372-9e52-3ac5fac147e4",
+              "imageRatio": "square",
+              "ratio": {
+               "value": "square",
+               "mode": "default"
+              },
+              "sizeMode": "default",
+              "type": "rectangle"
+             }
+            },
+            "params": {
+             "actionType": "%@actionType%@",
+             "model": "EXPRESSION",
+             "modelId": "cb5a387e-61af-49b8-8361-d05af4d70923",
+             "brand": "FRANCEINTER"
+            }
+           }
+          }
+         },
+         {
+          "type": "button",
+          "widget": {
+           "type": "icon",
+           "assetId": "ic_threedot",
+           "style": "blanked",
+           "action": {
+            "type": "openSheet",
+            "widget": {
+             "type": "bottomSheet",
+             "widget": {
+              "coverModal": {
+               "titles": {
+                "title": "Daniel Morin en liberté : Fabrice Drouelle, Monsieur Affaires sensibles",
+                "alignment": "leading",
+                "subtitle": "Daniel Morin en liberté"
+               },
+               "image": {
+                "id": "17e73e02-074e-4372-9e52-3ac5fac147e4",
+                "imageRatio": "square",
+                "ratio": {
+                 "value": "square",
+                 "mode": "default"
+                },
+                "sizeMode": "default",
+                "type": "rectangle"
+               }
+              },
+              "highlights": [
+               {
+                "header": null,
+                "footer": null,
+                "decoration": {
+                 "type": "block",
+                 "separatorType": "default"
+                },
+                "hasSnapScale": null,
+                "itemHeight": null,
+                "size": "m",
+                "rows": 1,
+                "items": [
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "type": "download",
+                    "id": "cb5a387e-61af-49b8-8361-d05af4d70923"
+                   },
+                   "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                   "type": "download"
+                  }
+                 },
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                    "type": "bookmark",
+                    "params": {
+                     "actionType": "%@actionType%@",
+                     "model": "EXPRESSION",
+                     "modelId": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                     "brand": "FRANCEINTER"
+                    }
+                   },
+                   "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                   "type": "bookmark"
+                  }
+                 },
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                    "type": "openPlaylistBottomSheet",
+                    "coverModal": {
+                     "titles": {
+                      "title": "Daniel Morin en liberté : Fabrice Drouelle, Monsieur Affaires sensibles",
+                      "subtitle": "Daniel Morin en liberté",
+                      "alignment": "leading"
+                     },
+                     "image": {
+                      "id": "17e73e02-074e-4372-9e52-3ac5fac147e4",
+                      "imageRatio": "square",
+                      "ratio": {
+                       "value": "square",
+                       "mode": "default"
+                      },
+                      "sizeMode": "default",
+                      "type": "rectangle"
+                     }
+                    },
+                    "params": {
+                     "actionType": "%@actionType%@",
+                     "model": "EXPRESSION",
+                     "modelId": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                     "brand": "FRANCEINTER"
+                    }
+                   },
+                   "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                   "type": "openPlaylistBottomSheet"
+                  }
+                 },
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "type": "queue",
+                    "id": "cb5a387e-61af-49b8-8361-d05af4d70923"
+                   },
+                   "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                   "type": "queue"
+                  }
+                 },
+                 {
+                  "type": "dynamicRow",
+                  "widget": {
+                   "action": {
+                    "type": "readUnread",
+                    "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                    "duration": 96
+                   },
+                   "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                   "type": "readUnread",
+                   "duration": 96
+                  }
+                 },
+                 {
+                  "type": "cardSide",
+                  "widget": {
+                   "image": null,
+                   "additionalInfo": null,
+                   "action": {
+                    "type": "share",
+                    "id": "https://www.radiofrance.fr/franceinter/podcasts/daniel-morin-en-liberte/daniel-morin-en-liberte-du-jeudi-10-septembre-2026-4088270",
+                    "accessibility": "Partager cet épisode"
+                   },
+                   "size": null,
+                   "background": null,
+                   "dropZoneDefault": null,
+                   "topInfo": null,
+                   "titles": {
+                    "style": "row",
+                    "dropZoneMini": null,
+                    "size": null,
+                    "subtitle": null,
+                    "title": "Partager",
+                    "titleText": {
+                     "style": "titleMedium",
+                     "label": "Partager"
+                    }
+                   },
+                   "border": null,
+                   "info": null,
+                   "iconId": "ic_share_stroked",
+                   "isSelectable": null,
+                   "padding": {
+                    "mode": "default"
+                   },
+                   "accessibility": {
+                    "label": "Partager",
+                    "placeholders": []
+                   }
+                  }
+                 },
+                 {
+                  "type": "cardSide",
+                  "widget": {
+                   "image": null,
+                   "additionalInfo": null,
+                   "action": {
+                    "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+                    "type": "openLayout",
+                    "accessibility": "Voir la page de l'épisode",
+                    "shimmer": {
+                     "id": "expression"
+                    }
+                   },
+                   "size": null,
+                   "background": null,
+                   "dropZoneDefault": null,
+                   "topInfo": null,
+                   "titles": {
+                    "style": "row",
+                    "dropZoneMini": null,
+                    "size": null,
+                    "subtitle": null,
+                    "title": "Voir la page de l'épisode",
+                    "titleText": {
+                     "style": "titleMedium",
+                     "label": "Voir la page de l'épisode"
+                    }
+                   },
+                   "border": null,
+                   "info": null,
+                   "iconId": "ic_document_stroked",
+                   "isSelectable": null,
+                   "padding": {
+                    "mode": "default"
+                   }
+                  }
+                 }
+                ],
+                "format": "list"
+               }
+              ],
+              "buttonTray": {
+               "orientation": "vertical",
+               "filled": true,
+               "buttons": [
+                {
+                 "type": "text",
+                 "text": "Fermer",
+                 "style": "blanked",
+                 "action": {
+                  "type": "dismiss"
+                 }
+                }
+               ]
+              }
+             }
+            },
+            "accessibility": "plus d'actions"
+           }
+          }
+         }
+        ],
+        "trailing": [
+         {
+          "type": "dynamicPlayAndDuration",
+          "widget": {
+           "progress": {
+            "type": "aod",
+            "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+            "duration": 96,
+            "accessibility": "1 min"
+           },
+           "button": {
+            "type": "playIcon",
+            "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+            "style": "filled",
+            "action": {
+             "id": "cb5a387e-61af-49b8-8361-d05af4d70923",
+             "type": "playAod",
+             "playlist": null
+            }
+           }
+          }
+         }
+        ]
+       }
+      },
+      "topInfo": null,
+      "titles": {
+       "style": "row",
+       "dropZoneMini": null,
+       "size": null,
+       "subtitle": "Daniel Morin en liberté",
+       "title": "Daniel Morin en liberté : Fabrice Drouelle, Monsieur Affaires sensibles",
+       "titleText": {
+        "style": "titleMedium",
+        "label": "Daniel Morin en liberté : Fabrice Drouelle, Monsieur Affaires sensibles"
+       },
+       "subtitleText": {
+        "style": "textSmall",
+        "label": "Daniel Morin en liberté"
+       }
+      },
+      "border": null,
+      "info": null,
+      "iconId": null,
+      "isSelectable": null,
+      "padding": {
+       "mode": "default"
+      },
+      "accessibility": {
+       "label": "Daniel Morin en liberté : Fabrice Drouelle, Monsieur Affaires sensibles, Daniel Morin en liberté, Jeudi 10 septembre 2026, %@",
+       "placeholders": [
+        {
+         "type": "duration",
+         "duration": 96,
+         "expressionId": "cb5a387e-61af-49b8-8361-d05af4d70923"
+        }
+       ]
+      },
+      "tagId": "episodeDate10092026"
+     }
+    }
+   ],
+   "format": "list"
+  }
+ ]
+}

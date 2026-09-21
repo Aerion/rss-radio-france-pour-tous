@@ -214,34 +214,12 @@
         margin: 0 0 6px;
         color: var(--ink);
       }
-      .card .standfirst-wrap {
-        position: relative;
-        margin: 0 0 14px;
-        flex: 1;
-      }
-      .card small {
-        display: -webkit-box;
-        -webkit-line-clamp: 3;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        font-size: 12.5px;
-        color: var(--muted);
-        line-height: 1.5;
-      }
-      .card .standfirst-wrap::after {
-        content: "";
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        height: 18px;
-        background: linear-gradient(to bottom, rgba(0, 0, 0, 0), var(--card-bg));
-      }
 
       /* actions: centered button, secondary links centered below */
       .card .actions {
         display: flex;
         flex-direction: column;
+        margin-top: auto;
         align-items: center;
         gap: 10px;
         text-align: center;
@@ -282,9 +260,6 @@
       }
       .secondary-links a:hover {
         text-decoration: underline;
-      }
-      .secondary-links .sep {
-        color: var(--muted);
       }
 
       .empty-state,
@@ -423,24 +398,17 @@
           const imgHTML = searchResult["imgUrl"]
             ? `<img src="${searchResult["imgUrl"]}" alt="" loading="lazy" />`
             : `<div class="no-img"></div>`;
-          // Both actions are real <a href> elements (not just JS buttons) so
-          // a visitor can right-click -> "copy link address" as an
+          // The RSS link is a real <a href> (not just a JS button) so a
+          // visitor can right-click -> "copy link address" as an
           // alternative to the clipboard button.
-          const emissionHTML = searchResult["path"]
-            ? `<a href="${searchResult["path"]}" target="_blank" rel="noopener">Émission ↗</a>`
-            : "";
-          const sepHTML = searchResult["path"] ? `<span class="sep">·</span>` : "";
           card.innerHTML = `
             ${imgHTML}
             <div class="content">
               <h3>${searchResult["title"]}</h3>
-              <div class="standfirst-wrap"><small>${searchResult["standfirst"]}</small></div>
               <div class="actions">
                 <button class="copy-btn" type="button" data-rss="${searchResult["rssUrl"]}">${RSS_ICON}<span>Copier le flux RSS</span></button>
                 <div class="secondary-links">
                   <a href="${searchResult["rssUrl"]}" target="_blank" rel="noopener">Flux RSS ↗</a>
-                  ${sepHTML}
-                  ${emissionHTML}
                 </div>
               </div>
             </div>
