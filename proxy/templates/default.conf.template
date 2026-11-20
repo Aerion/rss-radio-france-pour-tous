@@ -60,7 +60,11 @@ server {
     }
 
     location /grafana/ {
-        proxy_pass http://grafana:3000;
+        # Resolve through Docker DNS at request time so a stopped Grafana
+        # cannot prevent nginx from starting and serving the RSS app.
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $grafana_upstream grafana:3000;
+        proxy_pass http://$grafana_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
